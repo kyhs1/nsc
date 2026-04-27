@@ -188,6 +188,7 @@
                     }).filter(s => s);
                     setStudents(parsedStudents);
 
+                    // 감독교사 시트 가져오기 (GID는 선생님의 실제 감독 계획 시트 GID로 수정 가능)
                     const teacherUrl = `https://docs.google.com/spreadsheets/d/${TEACHER_SPREADSHEET_ID}/gviz/tq?tqx=out:csv&gid=1155665970`;
                     const teacherRes = await fetch(teacherUrl);
                     const teacherCsv = await teacherRes.text();
@@ -244,6 +245,7 @@
                 return targetDate.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'long' });
             }, [targetDate]);
 
+            // --- 감독교사 매칭 로직 (이미지 f54c78.png의 2행 1칸 구조 반영) ---
             const currentTeacher = useMemo(() => {
                 if (teachers.length === 0) return "불러오는 중...";
                 
@@ -251,29 +253,34 @@
                 const d = targetDate.getDate();
                 const dayStr = selectedDay; 
                 
-                const searchPatterns = [
-                    `${m}/${d}(${dayStr})`,
-                    `${m}월 ${d}일`,
-                    `${m}월${d}일`,
-                    `${m}/${d}`,
-                    `${m}.${d}`
-                ];
+                // 1. "3/16(월)" 형식의 패턴 생성
+                const pattern = `${m}/${d}(${dayStr})`;
                 
-                const foundIndex = teachers.findIndex(row => {
-                    if (!row[0]) return false;
-                    const cleanCell = row[0].replace(/\s/g, ''); 
-                    return searchPatterns.some(p => cleanCell.includes(p.replace(/\s/g, '')));
-                });
+                // 2. 시트 전체를 전수 조사 (행과 열)
+                let foundRow = -1;
+                let foundCol = -1;
 
-                if (foundIndex !== -1) {
-                    let name = teachers[foundIndex][1];
-                    if (!name || name.trim() === "" || name === "감독") {
-                        if (teachers[foundIndex + 1]) {
-                            name = teachers[foundIndex + 1][0];
+                for (let r = 0; r < teachers.length; r++) {
+                    for (let c = 0; c < teachers[r].length; c++) {
+                        const cellValue = teachers[r][c]?.replace(/\s/g, '') || "";
+                        if (cellValue.includes(pattern)) {
+                            foundRow = r;
+                            foundCol = c;
+                            break;
                         }
                     }
-                    const isValidName = name && name.length >= 2 && isNaN(name.charAt(0)) && !name.includes('/');
-                    return isValidName ? name : "없음";
+                    if (foundRow !== -1) break;
+                }
+
+                if (foundRow !== -1) {
+                    // 날짜가 적힌 행의 바로 아래 행(foundRow + 1)의 같은 열(foundCol)에서 이름을 가져옴
+                    if (teachers[foundRow + 1] && teachers[foundRow + 1][foundCol]) {
+                        const name = teachers[foundRow + 1][foundCol].trim();
+                        // 이름이 아니라고 판단되는 키워드 필터링
+                        const invalidKeywords = ["학력평가", "개교기념일", "어린이날", "중간고사", "기말고사", "공휴일"];
+                        const isValidName = name && name.length >= 2 && !invalidKeywords.some(k => name.includes(k)) && !name.includes('/');
+                        return isValidName ? name : "없음";
+                    }
                 }
                 
                 return "없음";
@@ -318,12 +325,10 @@
                 setWarningModalTarget(null);
             };
 
-            // --- 당일 경고만 삭제하는 로직으로 수정 ---
             const clearTodayWarning = (sId) => {
                 if (viewMode === 'history') return;
                 const key = `warning-${sId}`;
                 const currentWarnings = attendance[key] || [];
-                // 선택된 요일(오늘)의 기록만 제외하고 다시 저장
                 const next = { ...attendance, [key]: currentWarnings.filter(w => w.day !== selectedDay) };
                 saveDataToFirebase(next);
                 setWarningModalTarget(null);
@@ -397,7 +402,7 @@
                         <div className={`rounded-3xl p-4 mb-4 text-white shadow-xl transition-all duration-500 print:shadow-none print:text-black print:border print:bg-none ${viewMode === 'current' ? 'bg-gradient-to-br from-indigo-600 to-indigo-700' : 'bg-gradient-to-br from-orange-500 to-orange-600'}`}>
                             <div className="flex flex-col gap-3 text-left">
                                 <div className="flex justify-between items-start">
-                                    <div className="flex flex-col text-left text-left text-left">
+                                    <div className="flex flex-col text-left">
                                         <h2 className="text-lg font-black tracking-tight leading-tight flex items-center gap-1">
                                             <Icon name="Sparkles" size={16} className="text-yellow-300" fill="currentColor" />
                                             {dashboardDate}
@@ -414,7 +419,7 @@
                                 </div>
                                 <div className="grid grid-cols-3 gap-1.5">
                                     {PERIODS.map(p => (
-                                        <div key={p} className="bg-white/10 rounded-2xl p-2 border border-white/5 backdrop-blur-sm flex items-center justify-between text-left text-left">
+                                        <div key={p} className="bg-white/10 rounded-2xl p-2 border border-white/5 backdrop-blur-sm flex items-center justify-between">
                                             <span className="text-sm font-bold opacity-80 leading-none">{p}교시</span>
                                             <div className="flex items-baseline text-base font-black tracking-tighter leading-none">
                                                 <span>{periodStats[p].present}</span>
@@ -428,7 +433,7 @@
                         </div>
 
                         {isLoading ? (
-                            <div className="py-20 text-center text-left text-left text-left"><Icon name="RefreshCw" size={32} className="animate-spin mx-auto text-indigo-400 mb-2" /><p className="text-slate-400 text-xs font-bold animate-pulse tracking-tight text-center">명단을 불러오는 중입니다...</p></div>
+                            <div className="py-20 text-center text-left"><Icon name="RefreshCw" size={32} className="animate-spin mx-auto text-indigo-400 mb-2" /><p className="text-slate-400 text-xs font-bold animate-pulse tracking-tight text-center">명단을 불러오고 있습니다...</p></div>
                         ) : (
                             <div className="space-y-2 text-left">
                                 {students.filter(s => s.schedule[selectedDay][8] || s.schedule[selectedDay][9] || s.schedule[selectedDay][10]).map(student => {
@@ -444,16 +449,16 @@
 
                                     return (
                                         <div key={student.studentId} className="bg-white p-2.5 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between gap-1">
-                                            <div className="flex items-center gap-2 overflow-hidden shrink min-w-0 text-left text-left">
+                                            <div className="flex items-center gap-2 overflow-hidden shrink min-w-0 text-left">
                                                 <div className={`w-9 h-9 rounded-2xl flex items-center justify-center font-bold text-base shrink-0 transition-all ${warningStyle} ${isFemale ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600'}`}>
                                                     <Icon name="User" size={18} strokeWidth={2.5} />
                                                 </div>
                                                 <div className="flex flex-col gap-0.5 overflow-hidden text-left">
-                                                    <div className="flex items-center gap-1 flex-wrap min-w-0 text-left text-left">
+                                                    <div className="flex items-center gap-1 flex-wrap min-w-0 text-left">
                                                         <h3 className="font-bold text-slate-900 text-sm leading-none whitespace-nowrap">{student.name}</h3>
                                                         {leaveFrom && <span className="px-1 py-0.5 bg-orange-500 text-[7px] text-white rounded-md font-black whitespace-nowrap">조퇴:{leaveFrom}교시</span>}
                                                     </div>
-                                                    <div className="flex items-center gap-1.5 text-left text-left">
+                                                    <div className="flex items-center gap-1.5 text-left">
                                                         <p className="text-xs text-slate-500 font-bold leading-none shrink-0">{student.studentId}</p>
                                                         {student.isHelper && <span className="text-[8px] text-yellow-600 font-black flex items-center gap-0.5"><Icon name="Star" size={7} fill="currentColor"/> 도우미</span>}
                                                     </div>
@@ -465,17 +470,18 @@
                                                     const isC = data[`${student.studentId}-${p}-${selectedDay}`];
                                                     const isL = leaveFrom && p >= leaveFrom;
                                                     return (
-                                                        <button key={p} disabled={!hasS || viewMode === 'history'} onClick={() => toggleAttendance(student.studentId, p)} className={`w-9 h-9 rounded-xl flex flex-col items-center justify-center transition-all ${!hasS ? 'bg-slate-50 text-slate-100 border border-slate-100 opacity-10' : isL ? 'bg-orange-500 text-white shadow-md' : isC ? 'bg-green-500 text-white shadow-md' : 'bg-slate-100 text-slate-400 border border-slate-200/50'}`}>
-                                                            <span className="text-[10px] font-black mb-0.5 leading-none">{p}</span>
+                                                        <button key={p} disabled={!hasS || viewMode === 'history'} onClick={() => toggleAttendance(student.studentId, p)} className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center transition-all ${!hasS ? 'bg-slate-50 text-slate-100 border border-slate-100 opacity-10' : isL ? 'bg-orange-500 text-white shadow-md' : isC ? 'bg-green-500 text-white shadow-md' : 'bg-slate-100 text-slate-400 border border-slate-200/50'}`}>
+                                                            {/* 교시 숫자 크기 확대 (text-[10px] -> text-[12px]) */}
+                                                            <span className="text-[12px] font-black mb-0.5 leading-none">{p}</span>
                                                             {(isC || isL) && <Icon name="CheckCircle2" size={12} />}
                                                         </button>
                                                     );
                                                 })}
-                                                <button disabled={viewMode === 'history'} onClick={() => setModalTarget(student)} className={`w-9 h-9 rounded-xl flex flex-col items-center justify-center transition-all border ${leaveFrom ? 'bg-orange-100 text-orange-600 border-orange-200 shadow-sm' : 'bg-orange-50 text-orange-400 border-orange-100'}`}>
+                                                <button disabled={viewMode === 'history'} onClick={() => setModalTarget(student)} className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center transition-all border ${leaveFrom ? 'bg-orange-100 text-orange-600 border-orange-200 shadow-sm' : 'bg-orange-50 text-orange-400 border-orange-100'}`}>
                                                     <span className="text-[10px] font-black mb-0.5 leading-none text-center">조퇴</span>
                                                     <Icon name="LogOut" size={12} />
                                                 </button>
-                                                <button disabled={viewMode === 'history'} onClick={() => setWarningModalTarget(student)} className={`w-[32px] h-9 rounded-xl flex flex-col items-center justify-center transition-all border ${warnings.length > 0 ? 'bg-red-100 text-red-600 border-red-200 shadow-sm' : 'bg-red-50 text-red-400 border-red-100'}`}>
+                                                <button disabled={viewMode === 'history'} onClick={() => setWarningModalTarget(student)} className={`w-[32px] h-10 rounded-xl flex flex-col items-center justify-center transition-all border ${warnings.length > 0 ? 'bg-red-100 text-red-600 border-red-200 shadow-sm' : 'bg-red-50 text-red-400 border-red-100'}`}>
                                                     <span className="text-[10px] font-black mb-0.5 leading-none text-center">경고</span>
                                                     <Icon name="AlertTriangle" size={12} />
                                                 </button>
@@ -484,8 +490,8 @@
                                     );
                                 })}
                                 
-                                <div className="mt-8 bg-white p-4 rounded-[2rem] border-2 border-dashed border-slate-200 shadow-sm print:hidden text-left text-left">
-                                    <div className="flex items-center justify-between mb-2 px-1 text-left text-left">
+                                <div className="mt-8 bg-white p-4 rounded-[2rem] border-2 border-dashed border-slate-200 shadow-sm print:hidden text-left">
+                                    <div className="flex items-center justify-between mb-2 px-1 text-left">
                                         <div className="flex items-center gap-2 text-slate-800 font-black text-xs tracking-tight">
                                             <Icon name="MessageSquare" size={16} className="text-indigo-600" />
                                             전달사항 (감독교사 메모)
@@ -496,7 +502,7 @@
                                         </div>
                                     </div>
                                     <textarea 
-                                        className="w-full h-20 p-3 bg-slate-50 border-none rounded-2xl text-[13px] font-medium text-slate-700 focus:ring-2 focus:ring-indigo-100 placeholder:text-slate-300 resize-none transition-all text-left text-left text-left"
+                                        className="w-full h-20 p-3 bg-slate-50 border-none rounded-2xl text-[13px] font-medium text-slate-700 focus:ring-2 focus:ring-indigo-100 placeholder:text-slate-300 resize-none transition-all text-left"
                                         placeholder={viewMode === 'history' ? "지난주 메모입니다." : "오늘 야자 특이사항이나 다음 감독님께 전달할 내용을 입력하세요..."}
                                         value={memoValue}
                                         readOnly={viewMode === 'history'}
@@ -508,47 +514,15 @@
                         )}
                     </main>
 
-                    {/* 설치 도우미 창 */}
-                    {showInstallPrompt && (
-                        <div className="fixed inset-x-4 bottom-24 z-[100] animate-slide-up text-left text-left">
-                            <div className="bg-slate-900 text-white p-5 rounded-[2rem] shadow-2xl border border-slate-700 relative overflow-hidden text-left text-left">
-                                <div className="flex items-start gap-4 mb-4 text-left">
-                                    <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shrink-0 text-left">
-                                        <Icon name="CheckCircle2" size={24} color="white" strokeWidth={3} />
-                                    </div>
-                                    <div className="flex-1 pr-6 text-left">
-                                        <h3 className="font-black text-lg leading-tight mb-1">바탕화면에 추가하기</h3>
-                                        <p className="text-slate-400 text-xs font-medium leading-relaxed text-left">아이콘을 누르면 앱처럼 바로 열립니다.</p>
-                                    </div>
-                                    <button onClick={dismissPrompt} className="absolute top-4 right-4 p-1 text-slate-500 hover:text-white transition-colors"><Icon name="X" size={20} /></button>
-                                </div>
-                                <div className="space-y-3">
-                                    <div className="bg-yellow-500/20 text-yellow-400 p-3 rounded-2xl flex items-center gap-3 border border-yellow-500/30 text-[11px] font-bold text-left text-left text-left">
-                                        <div className="w-8 h-8 bg-yellow-400 text-yellow-900 rounded-lg flex items-center justify-center font-black">톡</div>
-                                        <p>카톡인 경우: 우측 하단 <Icon name="MoreHorizontal" size={12} className="inline mx-0.5" /> 클릭 → [다른 브라우저로 열기] 선택</p>
-                                    </div>
-                                    <div className="bg-slate-800/50 p-3 rounded-2xl flex items-center gap-3 border border-slate-700/30 text-[11px] font-bold text-left text-left text-left text-left">
-                                        <div className="w-8 h-8 bg-blue-500/20 text-blue-400 rounded-lg flex items-center justify-center font-black text-xs text-left">iOS</div>
-                                        <p>하단 <Icon name="Share" size={12} className="inline mx-0.5" /> 공유 버튼 → [홈 화면에 추가]</p>
-                                    </div>
-                                    <div className="bg-slate-800/50 p-3 rounded-2xl flex items-center gap-3 border border-slate-700/30 text-[11px] font-bold text-left text-left text-left text-left">
-                                        <div className="w-8 h-8 bg-green-500/20 text-green-400 rounded-lg flex items-center justify-center font-black text-xs text-left">AD</div>
-                                        <p>상단 <Icon name="MoreVertical" size={12} className="inline mx-0.5" /> 메뉴 버튼 → [홈 화면에 추가]</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
                     {modalTarget && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-900/70 backdrop-blur-md">
-                            <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-7 shadow-2xl text-left text-left text-left">
-                                <div className="flex justify-between items-start mb-6 text-left">
+                            <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-7 shadow-2xl text-left">
+                                <div className="flex justify-between items-start mb-6">
                                     <div className="p-3 bg-orange-100 text-orange-600 rounded-2xl"><Icon name="LogOut" size={28} /></div>
                                     <button onClick={() => setModalTarget(null)}><Icon name="X" size={28} color="#94a3b8" /></button>
                                 </div>
-                                <div className="mb-8 text-left text-left text-left">
-                                    <h4 className="text-2xl font-black text-slate-800 tracking-tight leading-tight text-left">{modalTarget.name} <span className="text-sm text-slate-400">{modalTarget.class}반</span></h4>
+                                <div className="mb-8 text-left">
+                                    <h4 className="text-2xl font-black text-slate-800 tracking-tight leading-tight">{modalTarget.name} <span className="text-sm text-slate-400">{modalTarget.class}반</span></h4>
                                     <p className="text-slate-500 text-sm font-medium mt-1">조퇴 교시를 선택하세요.</p>
                                 </div>
                                 <div className="grid grid-cols-1 gap-2 text-left">
@@ -566,14 +540,14 @@
                         const alreadyWarnedToday = warnings.some(w => w.day === selectedDay);
                         
                         return (
-                            <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-900/70 backdrop-blur-md text-left text-left text-left">
-                                <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-7 shadow-2xl animate-slide-up text-left text-left">
+                            <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-900/70 backdrop-blur-md text-left">
+                                <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-7 shadow-2xl animate-slide-up text-left">
                                     <div className="flex justify-between items-start mb-6 text-left">
                                         <div className="p-3 bg-red-100 text-red-600 rounded-2xl"><Icon name="AlertTriangle" size={28} /></div>
                                         <button onClick={() => setWarningModalTarget(null)}><Icon name="X" size={28} color="#94a3b8" /></button>
                                     </div>
-                                    <div className="mb-6 text-left text-left text-left">
-                                        <h4 className="text-2xl font-black text-slate-800 tracking-tight leading-tight text-left">{warningModalTarget.name} <span className="text-sm text-slate-400">경고 관리</span></h4>
+                                    <div className="mb-6 text-left">
+                                        <h4 className="text-2xl font-black text-slate-800 tracking-tight leading-tight">{warningModalTarget.name} <span className="text-sm text-slate-400">경고 관리</span></h4>
                                         <div className="mt-2 p-3 bg-red-50 rounded-xl">
                                             <p className="text-red-700 text-xs font-bold uppercase tracking-tight text-left">누적 경고: {warnings.length}회</p>
                                         </div>
@@ -585,9 +559,9 @@
                                             <br/><span className="text-[10px] opacity-70 mt-1 block font-medium text-center">경고는 하루에 한 번만 등록 가능합니다.</span>
                                         </div>
                                     ) : (
-                                        <div className="grid grid-cols-1 gap-2 max-h-[300px] overflow-y-auto no-scrollbar mb-4 text-left text-left">
+                                        <div className="grid grid-cols-1 gap-2 max-h-[300px] overflow-y-auto no-scrollbar mb-4 text-left">
                                             {WARNING_TYPES.map(type => (
-                                                <button key={type.id} onClick={() => addWarning(warningModalTarget.studentId, type.id)} className="flex items-center gap-3 px-5 py-4 bg-slate-50 hover:bg-red-50 border border-slate-100 rounded-2xl transition-all group text-left text-left">
+                                                <button key={type.id} onClick={() => addWarning(warningModalTarget.studentId, type.id)} className="flex items-center gap-3 px-5 py-4 bg-slate-50 hover:bg-red-50 border border-slate-100 rounded-2xl transition-all group text-left">
                                                     <Icon name={type.icon} size={18} className="text-slate-400 group-hover:text-red-500 shrink-0" />
                                                     <span className="font-bold text-slate-700 group-hover:text-red-700 text-sm text-left">{type.label}</span>
                                                 </button>
@@ -595,7 +569,6 @@
                                         </div>
                                     )}
                                     
-                                    {/* 당일 초기화 버튼 문구 및 기능 수정 */}
                                     <button onClick={() => clearTodayWarning(warningModalTarget.studentId)} className="w-full py-3 text-slate-400 text-xs font-bold hover:text-red-500 transition-colors underline text-center">오늘 경고 취소</button>
                                 </div>
                             </div>
@@ -603,7 +576,7 @@
                     })()}
 
                     {showReport && (
-                        <div className="fixed inset-0 z-[60] bg-white flex flex-col p-4 overflow-y-auto text-left text-left">
+                        <div className="fixed inset-0 z-[60] bg-white flex flex-col p-4 overflow-y-auto text-left">
                             <div className="flex justify-between items-center mb-6 text-left">
                                 <h2 className="text-2xl font-black text-left">주간 출석 리포트</h2>
                                 <button onClick={() => { setShowReport(false); setSelectedReportWeek(null); }} className="p-2 bg-slate-100 rounded-full"><Icon name="X" size={24} /></button>
@@ -613,12 +586,12 @@
                                     <button key={w.id} onClick={() => setSelectedReportWeek(w.id)} className={`px-4 py-2.5 rounded-xl text-xs font-bold border transition-all ${selectedReportWeek === w.id ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white text-slate-500'}`}>{w.label}</button>
                                 ))}
                             </div>
-                            <div className="flex gap-2 mb-6 text-left text-left">
+                            <div className="flex gap-2 mb-6 text-left">
                                 <button onClick={exportToCSV} className="flex-1 bg-green-600 text-white py-3 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all"><Icon name="FileDown" size={20} />CSV 저장</button>
                                 <button onClick={() => window.print()} className="flex-1 bg-slate-800 text-white py-3 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all"><Icon name="Printer" size={20} />인쇄하기</button>
                             </div>
-                            <div className="border rounded-2xl overflow-x-auto shadow-sm bg-white text-left text-left">
-                                <table className="w-full text-left text-xs border-collapse min-w-[800px] text-left text-left text-left">
+                            <div className="border rounded-2xl overflow-x-auto shadow-sm bg-white text-left">
+                                <table className="w-full text-left text-xs border-collapse min-w-[800px] text-left">
                                     <thead>
                                         <tr className="bg-slate-50 border-b text-left">
                                             <th className="p-3 font-bold border-r sticky left-0 bg-slate-50 z-10 w-24 text-left">학번/이름</th>
@@ -630,7 +603,7 @@
                                         {students.map(s => {
                                             const data = reportAttendance || {};
                                             return (
-                                                <tr key={s.studentId} className="border-b hover:bg-slate-50 transition-colors text-left text-left text-left text-left text-left text-left">
+                                                <tr key={s.studentId} className="border-b hover:bg-slate-50 transition-colors text-left">
                                                     <td className="p-2 border-r sticky left-0 bg-white z-10 font-bold text-left">{s.name}</td>
                                                     {DAYS.map(d => [8,9,10].map(p => {
                                                         const isAt = data[`${s.studentId}-${p}-${d}`];
@@ -652,8 +625,8 @@
                         </div>
                     )}
 
-                    <footer className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t py-4 px-6 flex justify-between items-center shadow-[0_-10px_25px_rgba(0,0,0,0.05)] z-40 text-left text-left">
-                        <div className="flex flex-col text-left text-left text-left">
+                    <footer className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t py-4 px-6 flex justify-between items-center shadow-[0_-10px_25px_rgba(0,0,0,0.05)] z-40 text-left">
+                        <div className="flex flex-col text-left">
                             <div className="flex items-center gap-2.5 text-slate-700 font-black text-[11px] tracking-tight text-left">
                                 <Icon name="Calendar" size={14} color="#4f46e5" /> 
                                 {realTime.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'long' })} {realTime.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: 'numeric' })}
@@ -662,8 +635,8 @@
                                 <Icon name="Table" size={10} /> 리포트 및 데이터 관리
                             </button>
                         </div>
-                        <div className="px-3 py-1.5 bg-green-50 text-green-700 rounded-full text-[10px] font-black border border-green-100 flex items-center gap-1.5 shrink-0 text-left text-left text-left text-left">
-                            <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse text-left text-left text-left text-left" />
+                        <div className="px-3 py-1.5 bg-green-50 text-green-700 rounded-full text-[10px] font-black border border-green-100 flex items-center gap-1.5 shrink-0 text-left">
+                            <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse text-left" />
                             AUTO SYNC
                         </div>
                     </footer>
