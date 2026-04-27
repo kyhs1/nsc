@@ -18,7 +18,6 @@
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         @media print { .print\:hidden { display: none !important; } }
-        /* 터치 대상 크기 확보 */
         button { min-height: 44px; min-width: 44px; }
     </style>
 </head>
@@ -28,21 +27,8 @@
     <script type="text/babel" data-type="module">
         // --- Firebase SDK Imports ---
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { 
-            getAuth, 
-            signInWithPopup, 
-            GoogleAuthProvider, 
-            onAuthStateChanged,
-            signOut 
-        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { 
-            getFirestore, 
-            doc, 
-            setDoc, 
-            onSnapshot, 
-            collection, 
-            getDoc 
-        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const { useState, useEffect, useMemo } = React;
 
@@ -61,13 +47,12 @@
         const isConfigValid = firebaseConfig.apiKey && firebaseConfig.apiKey !== "";
 
         // Firebase 초기화
-        let auth, db, provider;
+        let auth, db;
         const APP_ID = "night-study-v1"; 
         if (isConfigValid) {
             const app = initializeApp(firebaseConfig);
             auth = getAuth(app);
             db = getFirestore(app);
-            provider = new GoogleAuthProvider();
         }
 
         // --- 설정 데이터 ---
@@ -76,11 +61,10 @@
         const DAYS = ['월', '화', '수', '목'];
         const PERIODS = [8, 9, 10];
 
-        // --- Lucide Icon Component (Fix for toSvg error) ---
+        // --- Lucide Icon Component (Fix) ---
         const Icon = ({ name, size = 20, className = "", color = "currentColor", strokeWidth = 2, fill = "none" }) => {
             const iconData = lucide.icons[name];
             if (!iconData) return null;
-
             return (
                 <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -103,6 +87,19 @@
         };
 
         function App() {
+            // 설정이 안되어있을 때 안내 화면
+            if (!isConfigValid) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center p-6 bg-white">
+                        <div className="max-w-sm w-full text-center space-y-4">
+                            <Icon name="AlertCircle" size={48} className="mx-auto text-red-500" />
+                            <h1 className="text-xl font-bold">파이어베이스 설정 필요</h1>
+                            <p className="text-slate-500 text-sm">코드를 확인해 주세요.</p>
+                        </div>
+                    </div>
+                );
+            }
+
             const [user, setUser] = useState(null);
             const [viewMode, setViewMode] = useState('current');
             const [selectedClass, setSelectedClass] = useState('1-2');
@@ -118,7 +115,19 @@
             const [isReportLoading, setIsReportLoading] = useState(false);
             const [realTime, setRealTime] = useState(new Date());
 
-            // --- 주차 관리 ---
+            // --- 자동 익명 로그인 ---
+            useEffect(() => {
+                const initAuth = async () => {
+                    try {
+                        await signInAnonymously(auth);
+                    } catch (err) { console.error("Auth Error:", err); }
+                };
+                initAuth();
+                const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
+                return () => unsubscribe();
+            }, []);
+
+            // --- 주차 및 요일 관리 ---
             const getWeekIdentifier = (date) => {
                 const d = new Date(date);
                 d.setHours(0, 0, 0, 0);
@@ -148,29 +157,12 @@
                 return options;
             }, []);
 
-            // --- 로그인 기능 ---
-            const handleLogin = async () => {
-                try {
-                    await signInWithPopup(auth, provider);
-                } catch (error) { console.error("Login Error:", error); }
-            };
-
-            const handleLogout = () => {
-                if(confirm("로그아웃 하시겠습니까?")) signOut(auth);
-            };
-
             useEffect(() => {
                 const timer = setInterval(() => setRealTime(new Date()), 1000 * 60);
                 return () => clearInterval(timer);
             }, []);
 
-            useEffect(() => {
-                if (!auth) return;
-                const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
-                return () => unsubscribe();
-            }, []);
-
-            // --- 데이터 연동 ---
+            // 명단 불러오기
             const fetchSheetData = async (className) => {
                 setIsLoading(true);
                 try {
@@ -206,6 +198,7 @@
                 if (dayMap[today]) setSelectedDay(dayMap[today]);
             }, []);
 
+            // 출석 데이터 실시간 감시
             useEffect(() => {
                 if (!user) return;
                 const weekId = getWeekIdentifier(new Date());
@@ -216,6 +209,7 @@
                 return () => { unsubCurrent(); unsubHistory(); };
             }, [user]);
 
+            // 리포트용 특정 주차 데이터 로드
             useEffect(() => {
                 const fetchReportData = async () => {
                     if (!user || !showReport || !selectedReportWeek) return;
@@ -267,12 +261,6 @@
                 setModalTarget(null);
             };
 
-            const periodStats = useMemo(() => {
-                const stats = { 8: 0, 9: 0, 10: 0 };
-                students.forEach(s => PERIODS.forEach(p => { if (s.schedule[selectedDay][p]) stats[p]++; }));
-                return stats;
-            }, [students, selectedDay]);
-
             const exportToCSV = () => {
                 const weekLabel = weekOptions.find(w => w.id === selectedReportWeek)?.label || "데이터";
                 const header = ["학번", "성명", "요일", "8교시", "9교시", "10교시", "조퇴여부"];
@@ -296,32 +284,13 @@
                 link.click();
             };
 
-            // --- 로그인 화면 ---
-            if (!user) {
-                return (
-                    <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
-                        <div className="max-w-sm w-full bg-white rounded-[2.5rem] p-8 shadow-xl text-center space-y-8 border border-slate-100">
-                            <div className="w-20 h-20 bg-indigo-600 text-white rounded-3xl flex items-center justify-center mx-auto shadow-lg shadow-indigo-100">
-                                <Icon name="CheckCircle2" size={40} />
-                            </div>
-                            <div className="space-y-2">
-                                <h1 className="text-2xl font-black text-slate-900 tracking-tight">야간자율학습 출석부</h1>
-                                <p className="text-slate-500 text-sm font-medium">선생님 계정으로 로그인해 주세요.</p>
-                            </div>
-                            <button 
-                                onClick={handleLogin}
-                                className="w-full bg-white border border-slate-200 py-4 rounded-2xl flex items-center justify-center gap-3 font-bold hover:bg-slate-50 active:scale-95 transition-all shadow-sm"
-                            >
-                                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="Google" />
-                                구글 계정으로 시작하기
-                            </button>
-                        </div>
-                    </div>
-                );
+            if (isLoading && !user) {
+                return <div className="min-h-screen flex items-center justify-center bg-slate-50 font-bold text-slate-400">시스템 로딩 중...</div>;
             }
 
             return (
                 <div className="min-h-screen pb-24 overflow-x-hidden">
+                    {/* Header */}
                     <header className="bg-white border-b sticky top-0 z-30 shadow-sm print:hidden">
                         <div className="px-3 py-2 flex items-center justify-between gap-2">
                             <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
@@ -329,14 +298,9 @@
                                     <button key={day} onClick={() => setSelectedDay(day)} className={`w-8 h-8 flex items-center justify-center text-sm font-bold rounded-md transition-all ${selectedDay === day ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>{day}</button>
                                 ))}
                             </div>
-                            <div className="flex items-center gap-2">
-                                <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-500 transition-colors">
-                                    <Icon name="LogOut" size={18} />
-                                </button>
-                                <div className="flex bg-slate-200/50 p-0.5 rounded-lg shrink-0">
-                                    <button onClick={() => setViewMode('current')} className={`px-3 py-1.5 text-[11px] font-bold rounded-md transition-all ${viewMode === 'current' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}>이번 주</button>
-                                    <button onClick={() => setViewMode('history')} className={`px-3 py-1.5 text-[11px] font-bold rounded-md transition-all ${viewMode === 'history' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'}`}>지난주</button>
-                                </div>
+                            <div className="flex bg-slate-200/50 p-0.5 rounded-lg shrink-0">
+                                <button onClick={() => setViewMode('current')} className={`px-3 py-1.5 text-[11px] font-bold rounded-md transition-all ${viewMode === 'current' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}>이번 주</button>
+                                <button onClick={() => setViewMode('history')} className={`px-3 py-1.5 text-[11px] font-bold rounded-md transition-all ${viewMode === 'history' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'}`}>지난주</button>
                             </div>
                         </div>
                         <div className="px-3 pb-2 flex gap-1.5 overflow-x-auto no-scrollbar items-center pt-1 border-t border-slate-50/50">
@@ -350,6 +314,7 @@
                     </header>
 
                     <main className="p-4 max-w-md mx-auto print:p-0 print:max-w-none">
+                        {/* Dashboard */}
                         <div className={`rounded-3xl p-3.5 mb-4 text-white shadow-xl transition-all duration-500 print:shadow-none print:text-black print:border print:bg-none ${viewMode === 'current' ? 'bg-gradient-to-br from-indigo-600 to-indigo-700' : 'bg-gradient-to-br from-orange-500 to-orange-600'}`}>
                             <div className="flex flex-col gap-2.5">
                                 <div className="flex justify-between items-center px-1">
@@ -413,7 +378,7 @@
                     {/* 조퇴 모달 */}
                     {modalTarget && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-900/70 backdrop-blur-md">
-                            <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-7 shadow-2xl">
+                            <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-7 shadow-2xl animate-in fade-in zoom-in-95 duration-300">
                                 <div className="flex justify-between items-start mb-6">
                                     <div className="p-3 bg-orange-100 text-orange-600 rounded-2xl shadow-inner shadow-orange-200/50"><Icon name="LogOut" size={28} /></div>
                                     <button onClick={() => setModalTarget(null)} className="p-2 text-slate-400 hover:text-slate-600 active:bg-slate-100 rounded-full transition-all"><Icon name="X" size={28} /></button>
@@ -491,6 +456,7 @@
                         </div>
                     )}
 
+                    {/* Footer */}
                     <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t py-4 px-6 flex justify-between items-center shadow-[0_-10px_25px_rgba(0,0,0,0.05)] z-40 print:hidden">
                         <div className="flex flex-col gap-0.5">
                             <div className="flex items-center gap-2.5 text-slate-700">
