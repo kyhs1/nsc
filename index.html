@@ -3,7 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>야간자율학습 출석체크</title>
+    <title>경일고 야자 출석체크</title>
+    
+    <!-- 바탕화면 아이콘 및 바로가기 설정 -->
+    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%234f46e5'/%3E%3Cpath d='M50 90l25 25 55-55' stroke='white' stroke-width='16' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%234f46e5'/%3E%3Cpath d='M50 90l25 25 55-55' stroke='white' stroke-width='16' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+    <meta name="apple-mobile-web-app-title" content="경일고 출첵">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- React & Babel -->
@@ -19,6 +28,12 @@
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         @media print { .print\:hidden { display: none !important; } }
         button { min-height: 44px; min-width: 44px; }
+        /* 설치 안내 애니메이션 */
+        @keyframes slideUp {
+            from { transform: translateY(100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .animate-slide-up { animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900">
@@ -32,9 +47,7 @@
 
         const { useState, useEffect, useMemo } = React;
 
-        // ==========================================
-        // 선생님의 Firebase 프로젝트 설정 (kynsc-c9da3)
-        // ==========================================
+        // --- Firebase Config ---
         const firebaseConfig = {
             apiKey: "AIzaSyDnWUI3NFq7tt25AeOdE5TBmF_M_K-Am2k",
             authDomain: "kynsc-c9da3.firebaseapp.com",
@@ -45,8 +58,6 @@
         };
 
         const isConfigValid = firebaseConfig.apiKey && firebaseConfig.apiKey !== "";
-
-        // Firebase 초기화
         let auth, db;
         const APP_ID = "night-study-v1"; 
         if (isConfigValid) {
@@ -55,13 +66,11 @@
             db = getFirestore(app);
         }
 
-        // --- 설정 데이터 ---
         const SPREADSHEET_ID = '1k4wVqJFiohyxxOOdjRmfsTz9lSCX7w-kMYSSub0U3L0';
         const CLASSES = ['1-2', '1-3', '1-4', '1-5', '1-6'];
         const DAYS = ['월', '화', '수', '목'];
         const PERIODS = [8, 9, 10];
 
-        // --- Lucide Icon Component ---
         const Icon = ({ name, size = 20, className = "", color = "currentColor", strokeWidth = 2, fill = "none" }) => {
             const iconData = lucide.icons[name];
             if (!iconData) return null;
@@ -87,24 +96,11 @@
         };
 
         function App() {
-            if (!isConfigValid) {
-                return (
-                    <div className="min-h-screen flex items-center justify-center p-6 bg-white">
-                        <div className="max-w-sm w-full text-center space-y-4">
-                            <Icon name="AlertCircle" size={48} className="mx-auto text-red-500" />
-                            <h1 className="text-xl font-bold">파이어베이스 설정 필요</h1>
-                            <p className="text-slate-500 text-sm">코드를 확인해 주세요.</p>
-                        </div>
-                    </div>
-                );
-            }
-
             const [user, setUser] = useState(null);
             const [viewMode, setViewMode] = useState('current');
             const [selectedClass, setSelectedClass] = useState('1-2');
             const [selectedDay, setSelectedDay] = useState('월');
             const [attendance, setAttendance] = useState({});
-            const [historyData, setHistoryData] = useState({});
             const [students, setStudents] = useState([]); 
             const [isLoading, setIsLoading] = useState(true);
             const [modalTarget, setModalTarget] = useState(null);
@@ -113,20 +109,37 @@
             const [selectedReportWeek, setSelectedReportWeek] = useState(null);
             const [isReportLoading, setIsReportLoading] = useState(false);
             const [realTime, setRealTime] = useState(new Date());
+            const [showInstallPrompt, setShowInstallPrompt] = useState(false);
 
-            // --- 자동 익명 로그인 ---
+            // --- 설치 도우미 로직 (기능 고도화) ---
+            useEffect(() => {
+                // 1. 이미 앱 모드(바로가기)로 접속했는지 확인
+                const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+                
+                // 2. 이전에 닫기 버튼을 눌렀는지 확인
+                const hasDismissed = localStorage.getItem('dismissInstallPrompt');
+                
+                // 앱 모드가 아니고, 닫은 적도 없으며, 모바일 기기일 때만 안내창 표시
+                if (!isStandalone && !hasDismissed && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+                    setTimeout(() => setShowInstallPrompt(true), 2000);
+                }
+            }, []);
+
+            const dismissPrompt = () => {
+                setShowInstallPrompt(false);
+                // 닫기 상태를 저장하여 다시 뜨지 않게 함
+                localStorage.setItem('dismissInstallPrompt', 'true');
+            };
+
             useEffect(() => {
                 const initAuth = async () => {
-                    try {
-                        await signInAnonymously(auth);
-                    } catch (err) { console.error("Auth Error:", err); }
+                    try { await signInAnonymously(auth); } catch (err) { console.error(err); }
                 };
                 initAuth();
                 const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
                 return () => unsubscribe();
             }, []);
 
-            // --- 주차 및 요일 관리 ---
             const getWeekIdentifier = (date) => {
                 const d = new Date(date);
                 d.setHours(0, 0, 0, 0);
@@ -137,8 +150,7 @@
             const getWeekLabel = (date) => {
                 const d = new Date(date);
                 const month = d.getMonth() + 1;
-                const firstDayOfMonth = new Date(d.getFullYear(), d.getMonth(), 1);
-                const weekOfMonth = Math.ceil((d.getDate() + firstDayOfMonth.getDay()) / 7);
+                const weekOfMonth = Math.ceil((d.getDate() + (new Date(d.getFullYear(), d.getMonth(), 1).getDay())) / 7);
                 return `${month}월 ${weekOfMonth}주차`;
             };
 
@@ -148,20 +160,11 @@
                 for (let i = 0; i < 5; i++) {
                     const d = new Date(now);
                     d.setDate(now.getDate() - (i * 7));
-                    options.push({
-                        id: getWeekIdentifier(d),
-                        label: getWeekLabel(d) + (i === 0 ? ' (이번 주)' : i === 1 ? ' (지난주)' : '')
-                    });
+                    options.push({ id: getWeekIdentifier(d), label: getWeekLabel(d) + (i === 0 ? ' (이번 주)' : '') });
                 }
                 return options;
             }, []);
 
-            useEffect(() => {
-                const timer = setInterval(() => setRealTime(new Date()), 1000 * 60);
-                return () => clearInterval(timer);
-            }, []);
-
-            // 명단 불러오기
             const fetchSheetData = async (className) => {
                 setIsLoading(true);
                 try {
@@ -170,26 +173,31 @@
                     const response = await fetch(url);
                     const csvText = await response.text();
                     const rows = csvText.split(/\r?\n/).map(row => row.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(cell => cell.replace(/^"(.*)"$/, '$1').trim()));
-                    const parsedStudents = rows.map((row) => {
-                        const isTrue = (val) => val && (val.toUpperCase().trim() === 'TRUE' || val === '1' || val === 'T');
-                        const name = row[1];
-                        const studentId = row[0];
-                        if (!name || name === "성명" || studentId === "학번") return null;
+                    const parsed = rows.map(row => {
+                        const isT = (v) => v && (v.toUpperCase() === 'TRUE' || v === '1' || v === 'T');
+                        if (!row[1] || row[1] === "성명") return null;
                         return {
-                            studentId, name, gender: row[2], class: className, isHelper: row[15]?.includes('도우미'),
+                            studentId: row[0], name: row[1], gender: row[2], class: className, isHelper: row[15]?.includes('도우미'),
                             schedule: {
-                                '월': { 8: isTrue(row[3]), 9: isTrue(row[4]), 10: isTrue(row[5]) },   
-                                '화': { 8: isTrue(row[6]), 9: isTrue(row[7]), 10: isTrue(row[8]) },   
-                                '수': { 8: isTrue(row[9]), 9: isTrue(row[10]), 10: isTrue(row[11]) }, 
-                                '목': { 8: isTrue(row[12]), 9: isTrue(row[13]), 10: isTrue(row[14]) },
+                                '월': { 8: isT(row[3]), 9: isT(row[4]), 10: isT(row[5]) },
+                                '화': { 8: isT(row[6]), 9: isT(row[7]), 10: isT(row[8]) },
+                                '수': { 8: isT(row[9]), 9: isT(row[10]), 10: isT(row[11]) },
+                                '목': { 8: isT(row[12]), 9: isT(row[13]), 10: isT(row[14]) },
                             }
                         };
-                    }).filter(s => s !== null);
-                    setStudents(parsedStudents);
-                } catch (error) { console.error(error); } finally { setIsLoading(false); }
+                    }).filter(s => s);
+                    setStudents(parsed);
+                } catch (e) { console.error(e); } finally { setIsLoading(false); }
             };
 
             useEffect(() => { if(user) fetchSheetData(selectedClass); }, [selectedClass, user]);
+
+            useEffect(() => {
+                if (!user) return;
+                const weekId = getWeekIdentifier(new Date());
+                const unsub = onSnapshot(doc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'attendance'), weekId), (s) => s.exists() && setAttendance(s.data()));
+                return () => unsub();
+            }, [user]);
 
             useEffect(() => {
                 const today = new Date().getDay();
@@ -197,96 +205,35 @@
                 if (dayMap[today]) setSelectedDay(dayMap[today]);
             }, []);
 
-            // 출석 데이터 실시간 감시
-            useEffect(() => {
-                if (!user) return;
-                const weekId = getWeekIdentifier(new Date());
-                const lastWeekId = getWeekIdentifier(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
-                const collPath = collection(db, 'artifacts', APP_ID, 'public', 'data', 'attendance');
-                const unsubCurrent = onSnapshot(doc(collPath, weekId), (s) => s.exists() && setAttendance(s.data()));
-                const unsubHistory = onSnapshot(doc(collPath, lastWeekId), (s) => s.exists() && setHistoryData(s.data()));
-                return () => { unsubCurrent(); unsubHistory(); };
-            }, [user]);
-
-            // 리포트용 특정 주차 데이터 로드
-            useEffect(() => {
-                const fetchReportData = async () => {
-                    if (!user || !showReport || !selectedReportWeek) return;
-                    setIsReportLoading(true);
-                    try {
-                        const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'attendance', selectedReportWeek);
-                        const docSnap = await getDoc(docRef);
-                        setReportAttendance(docSnap.exists() ? docSnap.data() : {});
-                    } catch (e) { console.error(e); } finally { setIsReportLoading(false); }
-                };
-                fetchReportData();
-            }, [user, showReport, selectedReportWeek]);
-
             const dashboardDate = useMemo(() => {
                 const now = new Date();
-                const dayMap = { '월': 1, '화': 2, '수': 3, '목': 4, '금': 5, '토': 6, '일': 0 };
-                const targetDayIndex = dayMap[selectedDay];
-                const currentDayIndex = now.getDay();
-                let diff = targetDayIndex - currentDayIndex;
-                if (viewMode === 'history') diff -= 7;
-                const targetDate = new Date(now);
-                targetDate.setDate(now.getDate() + diff);
-                return targetDate.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'long' });
-            }, [selectedDay, viewMode]);
+                return now.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'long' });
+            }, []);
 
-            const footerDateString = useMemo(() => {
-                return realTime.toLocaleString('ko-KR', { month: 'long', day: 'numeric', weekday: 'long', hour: 'numeric', minute: 'numeric', hour12: false });
-            }, [realTime]);
-
-            const saveData = async (data) => {
-                if(!user) return;
-                setAttendance(data);
-                try {
-                    await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'attendance', getWeekIdentifier(new Date())), data);
-                } catch (e) { console.error(e); }
-            };
-
-            const toggleAttendance = (sId, period) => {
-                if (viewMode === 'history') return;
-                const key = `${sId}-${period}-${selectedDay}`;
-                const next = { ...attendance, [key]: !attendance[key] };
-                saveData(next);
-            };
-
-            const setEarlyLeave = (sId, startPeriod) => {
-                const key = `${sId}-leaveFrom-${selectedDay}`;
-                const next = { ...attendance, [key]: startPeriod };
-                saveData(next);
-                setModalTarget(null);
-            };
-
-            // 교시별 인원 통계 계산 (현재 출석 인원 / 총 신청 인원)
             const periodStats = useMemo(() => {
-                const stats = { 
-                    8: { present: 0, total: 0 }, 
-                    9: { present: 0, total: 0 }, 
-                    10: { present: 0, total: 0 } 
-                };
-                
-                students.forEach(s => {
-                    PERIODS.forEach(p => {
-                        // 해당 교시를 신청했는지 확인
-                        if (s.schedule[selectedDay][p]) {
-                            stats[p].total++;
-                            
-                            const isChecked = attendance[`${s.studentId}-${p}-${selectedDay}`];
-                            const leaveFrom = attendance[`${s.studentId}-leaveFrom-${selectedDay}`];
-                            const hasLeft = leaveFrom && p >= leaveFrom;
-                            
-                            // 출석 체크가 되어있고 조퇴하지 않은 경우만 '현재 출석'으로 카운트
-                            if (isChecked && !hasLeft) {
-                                stats[p].present++;
-                            }
-                        }
-                    });
-                });
+                const stats = { 8: { present: 0, total: 0 }, 9: { present: 0, total: 0 }, 10: { present: 0, total: 0 } };
+                students.forEach(s => PERIODS.forEach(p => {
+                    if (s.schedule[selectedDay][p]) {
+                        stats[p].total++;
+                        if (attendance[`${s.studentId}-${p}-${selectedDay}`] && !(attendance[`${s.studentId}-leaveFrom-${selectedDay}`] && p >= attendance[`${s.studentId}-leaveFrom-${selectedDay}`])) stats[p].present++;
+                    }
+                }));
                 return stats;
             }, [students, selectedDay, attendance]);
+
+            const toggleAttendance = (sId, p) => {
+                const key = `${sId}-${p}-${selectedDay}`;
+                const next = { ...attendance, [key]: !attendance[key] };
+                setAttendance(next);
+                setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'attendance', getWeekIdentifier(new Date())), next);
+            };
+
+            const setEarlyLeave = (sId, p) => {
+                const next = { ...attendance, [`${sId}-leaveFrom-${selectedDay}`]: p };
+                setAttendance(next);
+                setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'attendance', getWeekIdentifier(new Date())), next);
+                setModalTarget(null);
+            };
 
             const exportToCSV = () => {
                 const weekLabel = weekOptions.find(w => w.id === selectedReportWeek)?.label || "데이터";
@@ -311,13 +258,8 @@
                 link.click();
             };
 
-            if (isLoading && !user) {
-                return <div className="min-h-screen flex items-center justify-center bg-slate-50 font-bold text-slate-400">시스템 로딩 중...</div>;
-            }
-
             return (
                 <div className="min-h-screen pb-24 overflow-x-hidden">
-                    {/* Header */}
                     <header className="bg-white border-b sticky top-0 z-30 shadow-sm print:hidden">
                         <div className="px-3 py-2 flex items-center justify-between gap-2">
                             <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
@@ -341,7 +283,6 @@
                     </header>
 
                     <main className="p-4 max-w-md mx-auto print:p-0 print:max-w-none">
-                        {/* Dashboard */}
                         <div className={`rounded-3xl p-3.5 mb-4 text-white shadow-xl transition-all duration-500 print:shadow-none print:text-black print:border print:bg-none ${viewMode === 'current' ? 'bg-gradient-to-br from-indigo-600 to-indigo-700' : 'bg-gradient-to-br from-orange-500 to-orange-600'}`}>
                             <div className="flex flex-col gap-2.5">
                                 <div className="flex justify-between items-center px-1">
@@ -357,11 +298,10 @@
                                     {PERIODS.map(p => (
                                         <div key={p} className="bg-white/10 rounded-2xl p-2 px-3 border border-white/5 backdrop-blur-sm flex items-center justify-between print:border-black print:text-black">
                                             <span className="text-base font-bold opacity-80 leading-none">{p}교시</span>
-                                            <div className="flex items-baseline">
-                                                <span className="text-lg font-black tracking-tighter leading-none">{periodStats[p].present}</span>
-                                                <span className="text-[10px] font-medium opacity-60 mx-0.5">/</span>
-                                                <span className="text-[10px] font-bold opacity-80 leading-none">{periodStats[p].total}</span>
-                                                <span className="text-[10px] font-medium opacity-60 ml-0.5">명</span>
+                                            <div className="flex items-baseline text-lg font-black tracking-tighter leading-none">
+                                                <span>{periodStats[p].present}</span>
+                                                <span className="text-[10px] opacity-60 mx-0.5">/</span>
+                                                <span className="text-[10px] opacity-80">{periodStats[p].total}명</span>
                                             </div>
                                         </div>
                                     ))}
@@ -374,31 +314,29 @@
                         ) : (
                             <div className="space-y-2.5">
                                 {students.filter(s => s.schedule[selectedDay][8] || s.schedule[selectedDay][9] || s.schedule[selectedDay][10]).map(student => {
-                                    const data = viewMode === 'current' ? attendance : historyData;
-                                    const leaveFrom = data[`${student.studentId}-leaveFrom-${selectedDay}`];
+                                    const leaveFrom = attendance[`${student.studentId}-leaveFrom-${selectedDay}`];
                                     const isFemale = student.gender === '여' || student.gender === '여성';
-                                    const isMale = student.gender === '남' || student.gender === '남성';
                                     return (
-                                        <div key={student.studentId} className="bg-white p-3.5 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between transition-all print:shadow-none print:border-b print:rounded-none">
+                                        <div key={student.studentId} className="bg-white p-3.5 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between transition-all">
                                             <div className="flex items-center gap-3">
-                                                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-bold text-base transition-all duration-300 print:border ${leaveFrom ? 'bg-orange-100 text-orange-600 ring-4 ring-orange-500/20' : isFemale ? 'bg-pink-100 text-pink-600' : isMale ? 'bg-blue-100 text-blue-600' : 'bg-indigo-50 text-indigo-600'}`}><Icon name="User" size={22} strokeWidth={2.5} /></div>
+                                                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-bold text-base ${leaveFrom ? 'bg-orange-100 text-orange-600 ring-4 ring-orange-500/20' : isFemale ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600'}`}><Icon name="User" size={22} strokeWidth={2.5} /></div>
                                                 <div>
-                                                    <div className="flex items-center gap-1.5 flex-wrap"><h3 className="font-bold text-slate-900 text-base tracking-tight leading-none">{student.name}</h3>{leaveFrom && <span className="px-1.5 py-0.5 bg-orange-500 text-[8px] text-white rounded-lg font-black shadow-sm">조퇴:{leaveFrom}교시</span>}</div>
-                                                    <div className="flex items-center gap-2 mt-1"><p className="text-base text-slate-600 font-bold tracking-tight leading-none">{student.studentId}</p>{student.isHelper && <span className="px-1 py-0.5 bg-yellow-400 text-[9px] text-yellow-950 rounded-md font-black shadow-sm flex items-center gap-0.5"><Icon name="Star" size={8} fill="currentColor"/> 도우미</span>}</div>
+                                                    <div className="flex items-center gap-1.5 flex-wrap"><h3 className="font-bold text-slate-900 text-base leading-none">{student.name}</h3>{leaveFrom && <span className="px-1.5 py-0.5 bg-orange-500 text-[8px] text-white rounded-lg font-black">조퇴:{leaveFrom}교시</span>}</div>
+                                                    <div className="flex items-center gap-2 mt-1"><p className="text-base text-slate-600 font-bold leading-none">{student.studentId}</p>{student.isHelper && <span className="px-1 py-0.5 bg-yellow-400 text-[9px] text-yellow-950 rounded-md font-black shadow-sm flex items-center gap-0.5"><Icon name="Star" size={8} fill="currentColor"/> 도우미</span>}</div>
                                                 </div>
                                             </div>
                                             <div className="flex gap-1 print:hidden">
                                                 {PERIODS.map(p => {
-                                                    const isApplied = student.schedule[selectedDay][p];
-                                                    const isChk = data[`${student.studentId}-${p}-${selectedDay}`];
-                                                    const isEarlyLeavePeriod = leaveFrom && p >= leaveFrom;
+                                                    const hasS = student.schedule[selectedDay][p];
+                                                    const isC = attendance[`${student.studentId}-${p}-${selectedDay}`];
+                                                    const isL = leaveFrom && p >= leaveFrom;
                                                     return (
-                                                        <button key={p} disabled={!isApplied || viewMode === 'history'} onClick={() => toggleAttendance(student.studentId, p)} className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center transition-all ${!isApplied ? 'bg-slate-50 text-slate-100 border border-slate-100 opacity-10' : isEarlyLeavePeriod ? 'bg-orange-500 text-white shadow-md ring-2 ring-orange-300' : isChk ? 'bg-green-500 text-white shadow-md' : 'bg-slate-100 text-slate-400 active:scale-90 border border-slate-200/50'}`}>
-                                                            <span className="text-[8px] font-black mb-0.5">{p}</span>{isChk || isEarlyLeavePeriod ? <Icon name="CheckCircle2" size={14} /> : <div className={`w-3 h-3 rounded-full border-2 ${isApplied ? 'border-current/20' : 'border-transparent'}`} />}
+                                                        <button key={p} disabled={!hasS} onClick={() => toggleAttendance(student.studentId, p)} className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center transition-all ${!hasS ? 'bg-slate-50 text-slate-100 opacity-10' : isL ? 'bg-orange-500 text-white shadow-md' : isC ? 'bg-green-500 text-white shadow-md' : 'bg-slate-100 text-slate-400 border border-slate-200/50'}`}>
+                                                            <span className="text-[8px] font-black mb-0.5">{p}</span>{ (isC || isL) && <Icon name="CheckCircle2" size={14} /> }
                                                         </button>
                                                     );
                                                 })}
-                                                <button disabled={viewMode === 'history'} onClick={() => setModalTarget(student)} className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center transition-all ml-1 border ${leaveFrom ? 'bg-orange-100 text-orange-600 border-orange-200' : 'bg-orange-50 text-orange-400 border-orange-100 active:scale-90'}`}><span className="text-[8px] font-black mb-0.5">조퇴</span><Icon name="LogOut" size={14} /></button>
+                                                <button onClick={() => setModalTarget(student)} className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ml-1 border ${leaveFrom ? 'bg-orange-100 text-orange-600 border-orange-200' : 'bg-orange-50 text-orange-400 border-orange-100'}`}><Icon name="LogOut" size={14} /></button>
                                             </div>
                                         </div>
                                     );
@@ -407,100 +345,102 @@
                         )}
                     </main>
 
-                    {/* 조퇴 모달 */}
-                    {modalTarget && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-900/70 backdrop-blur-md">
-                            <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-7 shadow-2xl animate-in fade-in zoom-in-95 duration-300">
-                                <div className="flex justify-between items-start mb-6">
-                                    <div className="p-3 bg-orange-100 text-orange-600 rounded-2xl shadow-inner shadow-orange-200/50"><Icon name="LogOut" size={28} /></div>
-                                    <button onClick={() => setModalTarget(null)} className="p-2 text-slate-400 hover:text-slate-600 active:bg-slate-100 rounded-full transition-all"><Icon name="X" size={28} /></button>
+                    {/* 설치 도우미 창 */}
+                    {showInstallPrompt && (
+                        <div className="fixed inset-x-4 bottom-24 z-[100] animate-slide-up">
+                            <div className="bg-slate-900 text-white p-5 rounded-[2rem] shadow-2xl border border-slate-700 relative overflow-hidden">
+                                <div className="flex items-start gap-4 mb-4">
+                                    <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shrink-0">
+                                        <Icon name="CheckCircle2" size={24} color="white" strokeWidth={3} />
+                                    </div>
+                                    <div className="flex-1 pr-6">
+                                        <h3 className="font-black text-lg leading-tight mb-1">바탕화면에 추가하기</h3>
+                                        <p className="text-slate-400 text-xs font-medium leading-relaxed">아이콘을 누르면 앱처럼 바로 열립니다.</p>
+                                    </div>
+                                    <button onClick={dismissPrompt} className="absolute top-4 right-4 p-1 text-slate-500 hover:text-white transition-colors"><Icon name="X" size={20} /></button>
                                 </div>
-                                <div className="mb-8">
-                                    <div className="flex items-baseline gap-2 mb-2"><h4 className="text-2xl font-black text-slate-800 tracking-tight">{modalTarget.name}</h4><span className="text-sm font-bold text-slate-400">{modalTarget.class}반</span></div>
-                                    <p className="text-slate-500 text-sm font-medium leading-relaxed">오늘 몇 교시부터 조퇴했나요?</p>
-                                </div>
-                                <div className="grid grid-cols-1 gap-2.5">
-                                    {PERIODS.map(p => (
-                                        <button key={p} onClick={() => setEarlyLeave(modalTarget.studentId, p)} className="flex items-center justify-between px-5 py-4 bg-slate-50 hover:bg-orange-50 border border-slate-100 hover:border-orange-200 rounded-2xl transition-all group"><span className="font-bold text-slate-700 group-hover:text-orange-600">{p}교시부터 조퇴</span><Icon name="CheckCircle2" size={18} className="text-slate-200 group-hover:text-orange-400" /></button>
-                                    ))}
-                                    {attendance[`${modalTarget.studentId}-leaveFrom-${selectedDay}`] && (
-                                        <button onClick={() => setEarlyLeave(modalTarget.studentId, null)} className="mt-2 flex items-center justify-center gap-2 py-4 bg-red-50 text-red-500 border border-red-100 rounded-2xl font-black text-xs transition-all"><Icon name="Trash2" size={14} />조퇴 기록 삭제</button>
-                                    )}
+                                <div className="space-y-3">
+                                    <div className="bg-slate-800/50 p-3 rounded-2xl flex items-center gap-3 border border-slate-700/30 text-[11px] font-bold">
+                                        <div className="w-8 h-8 bg-blue-500/20 text-blue-400 rounded-lg flex items-center justify-center">iOS</div>
+                                        <p>하단 <Icon name="Share" size={12} className="inline mx-0.5" /> 공유 버튼 → [홈 화면에 추가]</p>
+                                    </div>
+                                    <div className="bg-slate-800/50 p-3 rounded-2xl flex items-center gap-3 border border-slate-700/30 text-[11px] font-bold">
+                                        <div className="w-8 h-8 bg-green-500/20 text-green-400 rounded-lg flex items-center justify-center">AD</div>
+                                        <p>상단 <Icon name="MoreVertical" size={12} className="inline mx-0.5" /> 메뉴 버튼 → [홈 화면에 추가]</p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     )}
 
-                    {/* 리포트 모달 */}
+                    {modalTarget && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-900/70 backdrop-blur-md">
+                            <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-7 shadow-2xl">
+                                <div className="flex justify-between items-start mb-6">
+                                    <div className="p-3 bg-orange-100 text-orange-600 rounded-2xl"><Icon name="LogOut" size={28} /></div>
+                                    <button onClick={() => setModalTarget(null)}><Icon name="X" size={28} color="#94a3b8" /></button>
+                                </div>
+                                <div className="mb-8">
+                                    <h4 className="text-2xl font-black text-slate-800">{modalTarget.name} <span className="text-sm text-slate-400">{modalTarget.class}반</span></h4>
+                                    <p className="text-slate-500 text-sm font-medium mt-1">조퇴 교시를 선택하세요.</p>
+                                </div>
+                                <div className="grid grid-cols-1 gap-2">
+                                    {PERIODS.map(p => (
+                                        <button key={p} onClick={() => setEarlyLeave(modalTarget.studentId, p)} className="w-full py-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold">{p}교시부터 조퇴</button>
+                                    ))}
+                                    <button onClick={() => setEarlyLeave(modalTarget.studentId, null)} className="mt-4 text-rose-500 font-bold">조퇴 기록 삭제</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {showReport && (
                         <div className="fixed inset-0 z-[60] bg-white flex flex-col p-4 overflow-y-auto">
                             <div className="flex justify-between items-center mb-6">
-                                <div className="flex flex-col"><h2 className="text-2xl font-black tracking-tight">{selectedClass}반 주간 출석 리포트</h2><p className="text-xs text-slate-400 font-bold">주차별 데이터를 선택하여 조회하세요.</p></div>
+                                <h2 className="text-2xl font-black">{selectedClass}반 주간 출석 리포트</h2>
                                 <button onClick={() => { setShowReport(false); setSelectedReportWeek(null); }} className="p-2 bg-slate-100 rounded-full"><Icon name="X" size={24} /></button>
                             </div>
                             <div className="flex flex-wrap gap-2 mb-6">
-                                {weekOptions.map(week => (
-                                    <button key={week.id} onClick={() => setSelectedReportWeek(week.id)} className={`px-4 py-2.5 rounded-xl text-xs font-bold border transition-all ${selectedReportWeek === week.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}>{week.label}</button>
+                                {weekOptions.map(w => (
+                                    <button key={w.id} onClick={() => setSelectedReportWeek(w.id)} className={`px-4 py-2.5 rounded-xl text-xs font-bold border ${selectedReportWeek === w.id ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white text-slate-500'}`}>{w.label}</button>
                                 ))}
                             </div>
-                            <div className="flex gap-2 mb-6 print:hidden">
-                                <button onClick={exportToCSV} className="flex-1 bg-green-600 text-white py-3 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all"><Icon name="FileDown" size={20} />CSV 저장</button>
-                                <button onClick={() => window.print()} className="flex-1 bg-slate-800 text-white py-3 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all"><Icon name="Printer" size={20} />인쇄</button>
+                            <div className="flex gap-2 mb-6">
+                                <button onClick={exportToCSV} className="flex-1 bg-green-600 text-white py-3 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg"><Icon name="FileDown" size={20} />CSV 저장</button>
+                                <button onClick={() => window.print()} className="flex-1 bg-slate-800 text-white py-3 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg"><Icon name="Printer" size={20} />인쇄</button>
                             </div>
-                            {isReportLoading ? (
-                                <div className="py-20 text-center"><Icon name="RefreshCw" size={40} className="animate-spin mx-auto text-indigo-400 mb-4" /><p className="text-slate-400 font-bold animate-pulse">데이터 로딩 중...</p></div>
-                            ) : (
-                                <div className="border rounded-2xl overflow-x-auto shadow-sm bg-white">
-                                    <table className="w-full text-left text-xs border-collapse min-w-[800px]">
-                                        <thead>
-                                            <tr className="bg-slate-50 border-b">
-                                                <th className="p-3 font-bold border-r sticky left-0 bg-slate-50 z-10 w-24">성명 / 학번</th>
-                                                {DAYS.map(d => <th key={d} className="p-3 font-bold border-r text-center bg-slate-100/50" colSpan={3}>{d}요일</th>)}
+                            <div className="border rounded-2xl overflow-x-auto shadow-sm bg-white">
+                                <table className="w-full text-left text-xs border-collapse min-w-[800px]">
+                                    <thead>
+                                        <tr className="bg-slate-50 border-b">
+                                            <th className="p-3 font-bold border-r sticky left-0 bg-slate-50 z-10 w-24">학번/이름</th>
+                                            {DAYS.map(d => <th key={d} className="p-3 font-bold border-r text-center" colSpan={3}>{d}요일</th>)}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {students.map(s => (
+                                            <tr key={s.studentId} className="border-b">
+                                                <td className="p-2 border-r sticky left-0 bg-white z-10 font-bold">{s.name}</td>
+                                                {DAYS.map(d => [8,9,10].map(p => (
+                                                    <td key={`${d}-${p}`} className="p-2 text-center border-r">
+                                                        {reportAttendance[`${s.studentId}-${p}-${d}`] ? <div className="w-2.5 h-2.5 rounded-full bg-green-500 mx-auto"></div> : "-"}
+                                                    </td>
+                                                )))}
                                             </tr>
-                                            <tr className="bg-slate-50 border-b"><th className="p-2 border-r sticky left-0 bg-slate-50 z-10"></th>{DAYS.map(d => [8,9,10].map(p => <th key={`${d}-${p}`} className="p-1 text-[9px] text-center border-r font-black text-slate-400">{p}</th>))}</tr>
-                                        </thead>
-                                        <tbody>
-                                            {students.map(s => (
-                                                <tr key={s.studentId} className="border-b hover:bg-slate-50 transition-colors">
-                                                    <td className="p-2 border-r sticky left-0 bg-white z-10"><div className="font-bold text-slate-800">{s.name}</div><div className="text-[10px] text-slate-400 font-medium">{s.studentId}</div></td>
-                                                    {DAYS.map(d => [8,9,10].map(p => {
-                                                        const isAt = reportAttendance[`${s.studentId}-${p}-${d}`];
-                                                        const leave = reportAttendance[`${s.studentId}-leaveFrom-${d}`];
-                                                        const isEarly = leave && p >= leave;
-                                                        return (
-                                                            <td key={`${s.studentId}-${d}-${p}`} className="p-1 text-center border-r">
-                                                                {isAt || isEarly ? (
-                                                                    <div className="flex flex-col items-center">
-                                                                        <div className={`w-2.5 h-2.5 rounded-full ${isEarly ? 'bg-orange-500' : 'bg-green-500'}`}></div>
-                                                                        {isEarly && <span className="text-[8px] text-orange-500 font-bold mt-0.5">조퇴</span>}
-                                                                    </div>
-                                                                ) : <div className="w-2.5 h-2.5 rounded-full border border-slate-200 mx-auto opacity-30"></div>}
-                                                            </td>
-                                                        );
-                                                    }))}
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            )}
-                            <p className="mt-4 text-[10px] text-slate-400 italic font-bold">* ● 녹색: 출석 / ● 주황색: 조퇴 / ○ 비어있음: 결석 혹은 신청안함</p>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     )}
 
-                    {/* Footer */}
-                    <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t py-4 px-6 flex justify-between items-center shadow-[0_-10px_25px_rgba(0,0,0,0.05)] z-40 print:hidden">
-                        <div className="flex flex-col gap-0.5">
-                            <div className="flex items-center gap-2.5 text-slate-700">
-                                <Icon name="Calendar" size={18} className="text-indigo-600" />
-                                <span className="font-black text-xs tracking-tighter">{footerDateString}</span>
-                            </div>
-                            <button onClick={() => setShowReport(true)} className="flex items-center gap-1 text-[10px] font-bold text-indigo-500 hover:underline"><Icon name="Table" size={10} /> 데이터 내보내기/인쇄</button>
+                    <footer className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t py-4 px-6 flex justify-between items-center shadow-[0_-10px_25px_rgba(0,0,0,0.05)] z-40">
+                        <div className="flex flex-col">
+                            <div className="flex items-center gap-2.5 text-slate-700 font-black text-xs"><Icon name="Calendar" size={16} color="#4f46e5" /> {realTime.toLocaleTimeString()}</div>
+                            <button onClick={() => setShowReport(true)} className="text-[10px] font-bold text-indigo-500 mt-1">리포트 및 데이터 관리</button>
                         </div>
-                        <div className={`flex items-center gap-1.5 text-[10px] font-black px-3.5 py-1.5 rounded-full shadow-sm ${viewMode === 'current' ? 'bg-green-50 text-green-700' : 'bg-orange-50 text-orange-700'}`}>
-                            <Icon name="Save" size={12} /> {viewMode === 'current' ? 'AUTO SYNC' : 'HISTORY'}
-                        </div>
-                    </div>
+                        <div className="px-3 py-1.5 bg-green-50 text-green-700 rounded-full text-[10px] font-black border border-green-100">AUTO SYNC</div>
+                    </footer>
                 </div>
             );
         }
