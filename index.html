@@ -121,7 +121,6 @@
             const [reportAttendance, setReportAttendance] = useState({});
             const [selectedReportWeek, setSelectedReportWeek] = useState(null);
             const [realTime, setRealTime] = useState(new Date());
-            const [showInstallPrompt, setShowInstallPrompt] = useState(false);
             const [memoValue, setMemoValue] = useState("");
             const [isMemoSaving, setIsMemoSaving] = useState(false);
 
@@ -188,7 +187,6 @@
                     }).filter(s => s);
                     setStudents(parsedStudents);
 
-                    // 감독교사 시트 가져오기 (GID는 선생님의 실제 감독 계획 시트 GID로 수정 가능)
                     const teacherUrl = `https://docs.google.com/spreadsheets/d/${TEACHER_SPREADSHEET_ID}/gviz/tq?tqx=out:csv&gid=1155665970`;
                     const teacherRes = await fetch(teacherUrl);
                     const teacherCsv = await teacherRes.text();
@@ -223,11 +221,25 @@
                 return () => { unsubCurrent(); unsubHistory(); };
             }, [user, selectedDay, viewMode]);
 
+            // 리포트용 지난 데이터 로딩 로직 (이번 주가 아닐 때만 fetch)
             useEffect(() => {
-                const today = new Date().getDay();
-                const dayMap = { 1: '월', 2: '화', 3: '수', 4: '목' };
-                if (dayMap[today]) setSelectedDay(dayMap[today]);
-            }, []);
+                const fetchOldData = async () => {
+                    if (!user || !showReport || !selectedReportWeek) return;
+                    const currentWeekId = getWeekIdentifier(new Date());
+                    if (selectedReportWeek === currentWeekId) return; // 이번 주면 attendance 사용하므로 fetch 안함
+
+                    try {
+                        const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'attendance', selectedReportWeek);
+                        const docSnap = await getDoc(docRef);
+                        if (docSnap.exists()) {
+                            setReportAttendance(docSnap.data());
+                        } else {
+                            setReportAttendance({});
+                        }
+                    } catch (e) { console.error(e); }
+                };
+                fetchOldData();
+            }, [user, showReport, selectedReportWeek]);
 
             const targetDate = useMemo(() => {
                 const now = new Date();
@@ -245,7 +257,6 @@
                 return targetDate.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'long' });
             }, [targetDate]);
 
-            // --- 감독교사 매칭 로직 (이미지 f54c78.png의 2행 1칸 구조 반영) ---
             const currentTeacher = useMemo(() => {
                 if (teachers.length === 0) return "불러오는 중...";
                 
@@ -253,17 +264,24 @@
                 const d = targetDate.getDate();
                 const dayStr = selectedDay; 
                 
-                // 1. "3/16(월)" 형식의 패턴 생성
-                const pattern = `${m}/${d}(${dayStr})`;
+                // 검색 패턴: "3/30(월)" 또는 "3/30", "3월 30일", "3.30" 등 다양하게 대비
+                const searchPatterns = [
+                    `${m}/${d}(${dayStr})`,
+                    `${m}/${d}`,
+                    `${m}월 ${d}일`,
+                    `${m}월${d}일`,
+                    `${m}.${d}`
+                ];
                 
-                // 2. 시트 전체를 전수 조사 (행과 열)
                 let foundRow = -1;
                 let foundCol = -1;
 
                 for (let r = 0; r < teachers.length; r++) {
                     for (let c = 0; c < teachers[r].length; c++) {
                         const cellValue = teachers[r][c]?.replace(/\s/g, '') || "";
-                        if (cellValue.includes(pattern)) {
+                        if (cellValue.includes(searchPatterns[0].replace(/\s/g, '')) || 
+                            cellValue === `${m}월${d}일` || 
+                            cellValue === `${m}/${d}`) {
                             foundRow = r;
                             foundCol = c;
                             break;
@@ -273,11 +291,9 @@
                 }
 
                 if (foundRow !== -1) {
-                    // 날짜가 적힌 행의 바로 아래 행(foundRow + 1)의 같은 열(foundCol)에서 이름을 가져옴
                     if (teachers[foundRow + 1] && teachers[foundRow + 1][foundCol]) {
                         const name = teachers[foundRow + 1][foundCol].trim();
-                        // 이름이 아니라고 판단되는 키워드 필터링
-                        const invalidKeywords = ["학력평가", "개교기념일", "어린이날", "중간고사", "기말고사", "공휴일"];
+                        const invalidKeywords = ["학력평가", "개교기념일", "어린이날", "중간고사", "기말고사", "공휴일", "시험"];
                         const isValidName = name && name.length >= 2 && !invalidKeywords.some(k => name.includes(k)) && !name.includes('/');
                         return isValidName ? name : "없음";
                     }
@@ -297,6 +313,15 @@
                 }));
                 return stats;
             }, [students, selectedDay, attendance, historyData, viewMode]);
+
+            // 리포트에서 사용할 최종 데이터 결정 로직 (핵심 수정 사항)
+            const activeReportData = useMemo(() => {
+                const currentWeekId = getWeekIdentifier(new Date());
+                if (selectedReportWeek === currentWeekId) {
+                    return attendance; // 이번 주면 실시간 상태 사용
+                }
+                return reportAttendance; // 지난 주면 fetch한 상태 사용
+            }, [selectedReportWeek, attendance, reportAttendance]);
 
             const toggleAttendance = (sId, p) => {
                 if (viewMode === 'history') return;
@@ -353,7 +378,7 @@
                 const header = ["학번", "성명", "요일", "8교시", "9교시", "10교시", "조퇴여부", "경고횟수"];
                 const rows = students.flatMap(s => 
                     DAYS.filter(d => s.schedule[d][8] || s.schedule[d][9] || s.schedule[d][10]).map(d => {
-                        const data = reportAttendance || {};
+                        const data = activeReportData;
                         const leave = data[`${s.studentId}-leaveFrom-${d}`];
                         const warnings = data[`warning-${s.studentId}`] || [];
                         return [
@@ -433,7 +458,7 @@
                         </div>
 
                         {isLoading ? (
-                            <div className="py-20 text-center text-left"><Icon name="RefreshCw" size={32} className="animate-spin mx-auto text-indigo-400 mb-2" /><p className="text-slate-400 text-xs font-bold animate-pulse tracking-tight text-center">명단을 불러오고 있습니다...</p></div>
+                            <div className="py-20 text-center"><Icon name="RefreshCw" size={32} className="animate-spin mx-auto text-indigo-400 mb-2" /><p className="text-slate-400 text-xs font-bold animate-pulse tracking-tight text-center">데이터 동기화 중...</p></div>
                         ) : (
                             <div className="space-y-2 text-left">
                                 {students.filter(s => s.schedule[selectedDay][8] || s.schedule[selectedDay][9] || s.schedule[selectedDay][10]).map(student => {
@@ -471,8 +496,8 @@
                                                     const isL = leaveFrom && p >= leaveFrom;
                                                     return (
                                                         <button key={p} disabled={!hasS || viewMode === 'history'} onClick={() => toggleAttendance(student.studentId, p)} className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center transition-all ${!hasS ? 'bg-slate-50 text-slate-100 border border-slate-100 opacity-10' : isL ? 'bg-orange-500 text-white shadow-md' : isC ? 'bg-green-500 text-white shadow-md' : 'bg-slate-100 text-slate-400 border border-slate-200/50'}`}>
-                                                            {/* 교시 숫자 크기 확대 (text-[10px] -> text-[12px]) */}
-                                                            <span className="text-[12px] font-black mb-0.5 leading-none">{p}</span>
+                                                            {/* 숫자 크기를 text-[13px]로 더 키움 */}
+                                                            <span className="text-[13px] font-black mb-0.5 leading-none">{p}</span>
                                                             {(isC || isL) && <Icon name="CheckCircle2" size={12} />}
                                                         </button>
                                                     );
@@ -517,7 +542,7 @@
                     {modalTarget && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-900/70 backdrop-blur-md">
                             <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-7 shadow-2xl text-left">
-                                <div className="flex justify-between items-start mb-6">
+                                <div className="flex justify-between items-start mb-6 text-left">
                                     <div className="p-3 bg-orange-100 text-orange-600 rounded-2xl"><Icon name="LogOut" size={28} /></div>
                                     <button onClick={() => setModalTarget(null)}><Icon name="X" size={28} color="#94a3b8" /></button>
                                 </div>
@@ -588,7 +613,7 @@
                             </div>
                             <div className="flex gap-2 mb-6 text-left">
                                 <button onClick={exportToCSV} className="flex-1 bg-green-600 text-white py-3 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all"><Icon name="FileDown" size={20} />CSV 저장</button>
-                                <button onClick={() => window.print()} className="flex-1 bg-slate-800 text-white py-3 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all"><Icon name="Printer" size={20} />인쇄하기</button>
+                                <button onClick={() => window.print()} className="flex-1 bg-slate-800 text-white py-3 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all text-left"><Icon name="Printer" size={20} />인쇄하기</button>
                             </div>
                             <div className="border rounded-2xl overflow-x-auto shadow-sm bg-white text-left">
                                 <table className="w-full text-left text-xs border-collapse min-w-[800px] text-left">
@@ -601,7 +626,7 @@
                                     </thead>
                                     <tbody>
                                         {students.map(s => {
-                                            const data = reportAttendance || {};
+                                            const data = activeReportData;
                                             return (
                                                 <tr key={s.studentId} className="border-b hover:bg-slate-50 transition-colors text-left">
                                                     <td className="p-2 border-r sticky left-0 bg-white z-10 font-bold text-left">{s.name}</td>
