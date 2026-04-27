@@ -23,31 +23,35 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;600;900&display=swap');
-        body { font-family: 'Pretendard', sans-serif; -webkit-tap-highlight-color: transparent; }
+        body { font-family: 'Pretendard', sans-serif; -webkit-tap-highlight-color: transparent; overflow-x: hidden; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         @media print { .print\:hidden { display: none !important; } }
-        button { min-height: 44px; min-width: 44px; }
-        /* 설치 안내 애니메이션 */
+        button { min-height: 40px; min-width: 32px; }
+        /* 설치 안내 및 경고 애니메이션 */
         @keyframes slideUp {
             from { transform: translateY(100%); opacity: 0; }
             to { transform: translateY(0); opacity: 1; }
         }
         .animate-slide-up { animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
+        
+        @keyframes pulse-red {
+            0%, 100% { border-color: #ef4444; box-shadow: 0 0 0 0px rgba(239, 68, 68, 0.4); }
+            50% { border-color: #f87171; box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.2); }
+        }
+        .warning-border-3 { animation: pulse-red 2s infinite; border-width: 3px !important; }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900">
     <div id="root"></div>
 
     <script type="text/babel" data-type="module">
-        // --- Firebase SDK Imports ---
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, collection, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        const { useState, useEffect, useMemo, useRef } = React;
+        const { useState, useEffect, useMemo } = React;
 
-        // --- Firebase Config ---
         const firebaseConfig = {
             apiKey: "AIzaSyDnWUI3NFq7tt25AeOdE5TBmF_M_K-Am2k",
             authDomain: "kynsc-c9da3.firebaseapp.com",
@@ -57,7 +61,7 @@
             appId: "1:888406074118:web:9b2dc01b7ec710c75c3487"
         };
 
-        const isConfigValid = firebaseConfig.apiKey && firebaseConfig.apiKey !== "";
+        const isConfigValid = firebaseConfig.apiKey !== "";
         let auth, db;
         const APP_ID = "night-study-v1"; 
         if (isConfigValid) {
@@ -71,6 +75,13 @@
         const CLASSES = ['1-2', '1-3', '1-4', '1-5', '1-6'];
         const DAYS = ['월', '화', '수', '목'];
         const PERIODS = [8, 9, 10];
+        
+        const WARNING_TYPES = [
+            { id: 1, label: "휴대폰 관련", icon: "Smartphone" },
+            { id: 2, label: "태블릿 관련", icon: "Tablet" },
+            { id: 3, label: "하교 관련", icon: "Home" },
+            { id: 4, label: "교사지도 불응", icon: "MessageCircleOff" }
+        ];
 
         const Icon = ({ name, size = 20, className = "", color = "currentColor", strokeWidth = 2, fill = "none" }) => {
             const iconData = lucide.icons[name];
@@ -106,18 +117,15 @@
             const [teachers, setTeachers] = useState([]); 
             const [isLoading, setIsLoading] = useState(true);
             const [modalTarget, setModalTarget] = useState(null);
+            const [warningModalTarget, setWarningModalTarget] = useState(null); 
             const [showReport, setShowReport] = useState(false);
             const [reportAttendance, setReportAttendance] = useState({});
             const [selectedReportWeek, setSelectedReportWeek] = useState(null);
-            const [isReportLoading, setIsReportLoading] = useState(false);
             const [realTime, setRealTime] = useState(new Date());
             const [showInstallPrompt, setShowInstallPrompt] = useState(false);
-            
-            // 메모 관련 상태
             const [memoValue, setMemoValue] = useState("");
             const [isMemoSaving, setIsMemoSaving] = useState(false);
 
-            // --- 설치 도우미 로직 ---
             useEffect(() => {
                 const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
                 const hasDismissed = localStorage.getItem('dismissInstallPrompt');
@@ -147,20 +155,15 @@
                 return `${d.getFullYear()}-W${Math.ceil((((d - new Date(d.getFullYear(), 0, 1)) / 86400000) + 1) / 7)}`;
             };
 
-            const getWeekLabel = (date) => {
-                const d = new Date(date);
-                const month = d.getMonth() + 1;
-                const weekOfMonth = Math.ceil((d.getDate() + (new Date(d.getFullYear(), d.getMonth(), 1).getDay())) / 7);
-                return `${month}월 ${weekOfMonth}주차`;
-            };
-
             const weekOptions = useMemo(() => {
                 const options = [];
                 const now = new Date();
                 for (let i = 0; i < 5; i++) {
                     const d = new Date(now);
                     d.setDate(now.getDate() - (i * 7));
-                    options.push({ id: getWeekIdentifier(d), label: getWeekLabel(d) + (i === 0 ? ' (이번 주)' : '') });
+                    const month = d.getMonth() + 1;
+                    const weekOfMonth = Math.ceil((d.getDate() + (new Date(d.getFullYear(), d.getMonth(), 1).getDay())) / 7);
+                    options.push({ id: getWeekIdentifier(d), label: `${month}월 ${weekOfMonth}주차` + (i === 0 ? ' (이번 주)' : '') });
                 }
                 return options;
             }, []);
@@ -193,7 +196,6 @@
                     const teacherCsv = await teacherRes.text();
                     const tRows = teacherCsv.split(/\r?\n/).map(row => row.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(cell => cell.replace(/^"(.*)"$/, '$1').trim()));
                     setTeachers(tRows);
-
                 } catch (e) { console.error(e); } finally { setIsLoading(false); }
             };
 
@@ -206,9 +208,7 @@
                     if (s.exists()) {
                         const data = s.data();
                         setAttendance(data);
-                        // 현재 선택된 요일의 메모 업데이트
-                        const currentMemo = data[`memo-${selectedDay}`] || "";
-                        setMemoValue(currentMemo);
+                        setMemoValue(data[`memo-${selectedDay}`] || "");
                     }
                 });
                 return () => unsub();
@@ -235,17 +235,6 @@
                 return row ? row[1] : "기록 없음";
             }, [teachers, selectedDay]);
 
-            const dashboardDate = useMemo(() => {
-                const now = new Date();
-                const dayMap = { '월': 1, '화': 2, '수': 3, '목': 4 };
-                const targetDayIndex = dayMap[selectedDay];
-                const currentDayIndex = now.getDay();
-                const diff = targetDayIndex - currentDayIndex;
-                const targetDate = new Date(now);
-                targetDate.setDate(now.getDate() + diff);
-                return targetDate.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'long' });
-            }, [selectedDay]);
-
             const periodStats = useMemo(() => {
                 const stats = { 8: { present: 0, total: 0 }, 9: { present: 0, total: 0 }, 10: { present: 0, total: 0 } };
                 students.forEach(s => PERIODS.forEach(p => {
@@ -260,18 +249,39 @@
             const toggleAttendance = (sId, p) => {
                 const key = `${sId}-${p}-${selectedDay}`;
                 const next = { ...attendance, [key]: !attendance[key] };
-                setAttendance(next);
-                setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'attendance', getWeekIdentifier(new Date())), next);
+                saveDataToFirebase(next);
             };
 
             const setEarlyLeave = (sId, p) => {
                 const next = { ...attendance, [`${sId}-leaveFrom-${selectedDay}`]: p };
-                setAttendance(next);
-                setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'attendance', getWeekIdentifier(new Date())), next);
+                saveDataToFirebase(next);
                 setModalTarget(null);
             };
+            
+            const addWarning = (sId, typeId) => {
+                const key = `warning-${sId}`;
+                const currentWarnings = attendance[key] || [];
+                const alreadyWarnedToday = currentWarnings.some(w => w.day === selectedDay);
+                if (alreadyWarnedToday) return;
 
-            // 메모 저장 핸들러
+                const newWarning = { typeId, teacher: currentTeacher, date: new Date().toISOString(), day: selectedDay };
+                const next = { ...attendance, [key]: [...currentWarnings, newWarning] };
+                saveDataToFirebase(next);
+                setWarningModalTarget(null);
+            };
+
+            const clearWarnings = (sId) => {
+                const key = `warning-${sId}`;
+                const next = { ...attendance, [key]: [] };
+                saveDataToFirebase(next);
+                setWarningModalTarget(null);
+            };
+
+            const saveDataToFirebase = async (data) => {
+                setAttendance(data);
+                try { await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'attendance', getWeekIdentifier(new Date())), data); } catch (e) { console.error(e); }
+            };
+
             const saveMemo = async () => {
                 if (!user || isMemoSaving) return;
                 setIsMemoSaving(true);
@@ -281,79 +291,57 @@
                 } catch (e) { console.error(e); } finally { setIsMemoSaving(false); }
             };
 
-            const exportToCSV = () => {
-                const weekLabel = weekOptions.find(w => w.id === selectedReportWeek)?.label || "데이터";
-                const header = ["학번", "성명", "요일", "8교시", "9교시", "10교시", "조퇴여부"];
-                const rows = students.flatMap(s => 
-                    DAYS.filter(d => s.schedule[d][8] || s.schedule[d][9] || s.schedule[d][10]).map(d => {
-                        const leave = reportAttendance[`${s.studentId}-leaveFrom-${d}`];
-                        return [
-                            s.studentId, s.name, d,
-                            reportAttendance[`${s.studentId}-8-${d}`] ? "출석" : "결석",
-                            reportAttendance[`${s.studentId}-9-${d}`] ? "출석" : "결석",
-                            reportAttendance[`${s.studentId}-10-${d}`] ? "출석" : "결석",
-                            leave ? `${leave}교시 조퇴` : "-"
-                        ];
-                    })
-                );
-                const csvContent = "\uFEFF" + [header, ...rows].map(e => e.join(",")).join("\n");
-                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-                const link = document.createElement("a");
-                link.href = URL.createObjectURL(blob);
-                link.download = `${selectedClass}반_${weekLabel.replace(/ /g, '_')}.csv`;
-                link.click();
-            };
-
             return (
-                <div className="min-h-screen pb-32 overflow-x-hidden">
+                <div className="min-h-screen pb-32 overflow-x-hidden bg-slate-50">
                     <header className="bg-white border-b sticky top-0 z-30 shadow-sm print:hidden">
-                        <div className="px-3 py-2 flex items-center justify-between gap-2">
-                            <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                        <div className="px-3 py-2 flex items-center justify-between gap-1">
+                            <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200 shrink-0">
                                 {DAYS.map(day => (
                                     <button key={day} onClick={() => setSelectedDay(day)} className={`w-8 h-8 flex items-center justify-center text-sm font-bold rounded-md transition-all ${selectedDay === day ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>{day}</button>
                                 ))}
                             </div>
                             <div className="flex bg-slate-200/50 p-0.5 rounded-lg shrink-0">
-                                <button onClick={() => setViewMode('current')} className={`px-3 py-1.5 text-[11px] font-bold rounded-md transition-all ${viewMode === 'current' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}>이번 주</button>
-                                <button onClick={() => setViewMode('history')} className={`px-3 py-1.5 text-[11px] font-bold rounded-md transition-all ${viewMode === 'history' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'}`}>지난주</button>
+                                <button onClick={() => setViewMode('current')} className={`px-2 py-1.5 text-[10px] font-bold rounded-md transition-all ${viewMode === 'current' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}>이번 주</button>
+                                <button onClick={() => setViewMode('history')} className={`px-2 py-1.5 text-[10px] font-bold rounded-md transition-all ${viewMode === 'history' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'}`}>지난주</button>
                             </div>
                         </div>
-                        <div className="px-3 pb-2 flex gap-1.5 overflow-x-auto no-scrollbar items-center pt-1 border-t border-slate-50/50">
-                            <button onClick={() => fetchData(selectedClass)} className={`p-2 rounded-lg transition-all ${isLoading ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400 active:rotate-180'}`}>
+                        <div className="px-3 pb-2 flex gap-1 overflow-x-auto no-scrollbar items-center pt-1 border-t border-slate-50/50">
+                            <button onClick={() => fetchData(selectedClass)} className={`p-2 rounded-lg shrink-0 ${isLoading ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
                                 <Icon name="RefreshCw" size={14} className={isLoading ? 'animate-spin' : ""} />
                             </button>
                             {CLASSES.map(cls => (
-                                <button key={cls} onClick={() => setSelectedClass(cls)} className={`flex-none px-4 py-1.5 rounded-xl text-xs font-bold border transition-all ${selectedClass === cls ? 'bg-slate-800 border-slate-800 text-white shadow-md' : 'bg-white border-slate-200 text-slate-500'}`}>{cls}</button>
+                                <button key={cls} onClick={() => setSelectedClass(cls)} className={`flex-none px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${selectedClass === cls ? 'bg-slate-800 border-slate-800 text-white shadow-md' : 'bg-white border-slate-200 text-slate-500'}`}>{cls}</button>
                             ))}
                         </div>
                     </header>
 
-                    <main className="p-4 max-w-md mx-auto print:p-0 print:max-w-none">
+                    <main className="p-3 max-w-md mx-auto print:p-0">
                         <div className={`rounded-3xl p-4 mb-4 text-white shadow-xl transition-all duration-500 print:shadow-none print:text-black print:border print:bg-none ${viewMode === 'current' ? 'bg-gradient-to-br from-indigo-600 to-indigo-700' : 'bg-gradient-to-br from-orange-500 to-orange-600'}`}>
                             <div className="flex flex-col gap-3">
-                                <div className="flex justify-between items-start px-1">
+                                <div className="flex justify-between items-start">
                                     <div className="flex flex-col text-left">
-                                        <div className="flex items-center gap-2 mb-1">
-                                            <Icon name="Sparkles" size={18} className="text-yellow-300" fill="currentColor" />
-                                            <h2 className="text-xl font-black tracking-tight leading-tight">{dashboardDate}</h2>
-                                        </div>
-                                        <div className="flex items-center gap-1.5 bg-white/20 px-2 py-1 rounded-lg w-fit">
-                                            <Icon name="ShieldCheck" size={14} className="text-white" />
-                                            <span className="text-xs font-bold whitespace-nowrap">감독교사: <span className="text-yellow-200">{currentTeacher}</span></span>
+                                        <h2 className="text-lg font-black tracking-tight leading-tight flex items-center gap-1">
+                                            <Icon name="Sparkles" size={16} className="text-yellow-300" fill="currentColor" />
+                                            {selectedDay}요일 현황
+                                        </h2>
+                                        <div className="flex items-center gap-1.5 bg-white/20 px-2 py-0.5 rounded-lg w-fit mt-1">
+                                            <Icon name="ShieldCheck" size={12} />
+                                            <span className="text-[10px] font-bold">감독교사: <span className="text-yellow-200">{currentTeacher}</span></span>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-1 text-white/80 font-bold text-[11px] uppercase tracking-wider print:text-black shrink-0">
-                                        {selectedClass}반 현황 <Icon name="TrendingUp" size={14} className="opacity-60" />
+                                    <div className="text-right shrink-0">
+                                        <div className="text-[10px] font-bold opacity-70 uppercase tracking-tighter">{selectedClass} CLASS</div>
+                                        <div className="text-xs font-black">야간자율학습</div>
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-3 gap-2">
+                                <div className="grid grid-cols-3 gap-1.5">
                                     {PERIODS.map(p => (
-                                        <div key={p} className="bg-white/10 rounded-2xl p-2 px-3 border border-white/5 backdrop-blur-sm flex items-center justify-between print:border-black print:text-black">
-                                            <span className="text-base font-bold opacity-80 leading-none">{p}교시</span>
-                                            <div className="flex items-baseline text-lg font-black tracking-tighter leading-none">
+                                        <div key={p} className="bg-white/10 rounded-2xl p-2 border border-white/5 backdrop-blur-sm flex items-center justify-between">
+                                            <span className="text-sm font-bold opacity-80 leading-none">{p}교시</span>
+                                            <div className="flex items-baseline text-base font-black tracking-tighter leading-none">
                                                 <span>{periodStats[p].present}</span>
-                                                <span className="text-[10px] opacity-60 mx-0.5">/</span>
-                                                <span className="text-[10px] opacity-80">{periodStats[p].total}명</span>
+                                                <span className="text-[9px] opacity-60 mx-0.5">/</span>
+                                                <span className="text-[9px] opacity-80">{periodStats[p].total}명</span>
                                             </div>
                                         </div>
                                     ))}
@@ -362,63 +350,82 @@
                         </div>
 
                         {isLoading ? (
-                            <div className="py-20 text-center"><Icon name="RefreshCw" size={40} className="animate-spin mx-auto text-indigo-400 mb-4" /><p className="text-slate-400 font-bold animate-pulse">명단 분석 중...</p></div>
+                            <div className="py-20 text-center"><Icon name="RefreshCw" size={32} className="animate-spin mx-auto text-indigo-400 mb-2" /><p className="text-slate-400 text-xs font-bold animate-pulse tracking-tight">명단 정보를 불러오고 있습니다...</p></div>
                         ) : (
-                            <div className="space-y-2.5">
+                            <div className="space-y-2 text-left">
                                 {students.filter(s => s.schedule[selectedDay][8] || s.schedule[selectedDay][9] || s.schedule[selectedDay][10]).map(student => {
                                     const leaveFrom = attendance[`${student.studentId}-leaveFrom-${selectedDay}`];
+                                    const warnings = attendance[`warning-${student.studentId}`] || [];
                                     const isFemale = student.gender === '여' || student.gender === '여성';
+                                    
+                                    // 경고 테두리 설정
+                                    let warningStyle = "border-2 border-transparent";
+                                    if (warnings.length === 1) warningStyle = "border-2 border-yellow-400";
+                                    else if (warnings.length === 2) warningStyle = "border-2 border-orange-500";
+                                    else if (warnings.length >= 3) warningStyle = "warning-border-3";
+
                                     return (
-                                        <div key={student.studentId} className="bg-white p-3.5 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between transition-all">
-                                            <div className="flex items-center gap-3">
-                                                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-bold text-base ${leaveFrom ? 'bg-orange-100 text-orange-600 ring-4 ring-orange-500/20' : isFemale ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600'}`}><Icon name="User" size={22} strokeWidth={2.5} /></div>
-                                                <div className="text-left">
-                                                    <div className="flex items-center gap-1.5 flex-wrap"><h3 className="font-bold text-slate-900 text-base leading-none">{student.name}</h3>{leaveFrom && <span className="px-1.5 py-0.5 bg-orange-500 text-[8px] text-white rounded-lg font-black">조퇴:{leaveFrom}교시</span>}</div>
-                                                    <div className="flex items-center gap-2 mt-1"><p className="text-base text-slate-600 font-bold leading-none">{student.studentId}</p>{student.isHelper && <span className="px-1 py-0.5 bg-yellow-400 text-[9px] text-yellow-950 rounded-md font-black flex items-center gap-0.5"><Icon name="Star" size={8} fill="currentColor"/> 도우미</span>}</div>
+                                        <div key={student.studentId} className="bg-white p-2.5 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between gap-1">
+                                            <div className="flex items-center gap-2 overflow-hidden shrink min-w-0">
+                                                {/* 인물 아이콘 크기 축소 및 테두리 적용 */}
+                                                <div className={`w-9 h-9 rounded-2xl flex items-center justify-center font-bold text-base shrink-0 transition-all ${warningStyle} ${isFemale ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600'}`}>
+                                                    <Icon name="User" size={18} strokeWidth={2.5} />
+                                                </div>
+                                                <div className="flex flex-col gap-0.5 overflow-hidden text-left">
+                                                    <div className="flex items-center gap-1 flex-wrap min-w-0">
+                                                        <h3 className="font-bold text-slate-900 text-sm leading-none whitespace-nowrap">{student.name}</h3>
+                                                        {leaveFrom && <span className="px-1 py-0.5 bg-orange-500 text-[7px] text-white rounded-md font-black whitespace-nowrap">조퇴:{leaveFrom}교시</span>}
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5">
+                                                        <p className="text-xs text-slate-500 font-bold leading-none shrink-0">{student.studentId}</p>
+                                                        {student.isHelper && <span className="text-[8px] text-yellow-600 font-black flex items-center gap-0.5"><Icon name="Star" size={7} fill="currentColor"/> 도우미</span>}
+                                                    </div>
                                                 </div>
                                             </div>
-                                            <div className="flex gap-1 print:hidden">
+                                            <div className="flex gap-0.5 print:hidden shrink-0">
                                                 {PERIODS.map(p => {
                                                     const hasS = student.schedule[selectedDay][p];
                                                     const isC = attendance[`${student.studentId}-${p}-${selectedDay}`];
                                                     const isL = leaveFrom && p >= leaveFrom;
                                                     return (
-                                                        <button key={p} disabled={!hasS} onClick={() => toggleAttendance(student.studentId, p)} className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center transition-all ${!hasS ? 'bg-slate-50 text-slate-100 opacity-10' : isL ? 'bg-orange-500 text-white shadow-md' : isC ? 'bg-green-500 text-white shadow-md' : 'bg-slate-100 text-slate-400 border border-slate-200/50'}`}>
-                                                            <span className="text-[8px] font-black mb-0.5">{p}</span>{ (isC || isL) && <Icon name="CheckCircle2" size={14} /> }
+                                                        <button key={p} disabled={!hasS} onClick={() => toggleAttendance(student.studentId, p)} className={`w-9 h-9 rounded-xl flex flex-col items-center justify-center transition-all ${!hasS ? 'bg-slate-50 text-slate-100 border border-slate-100 opacity-10' : isL ? 'bg-orange-500 text-white shadow-md' : isC ? 'bg-green-500 text-white shadow-md' : 'bg-slate-100 text-slate-400 border border-slate-200/50'}`}>
+                                                            <span className="text-[7px] font-black mb-0.5">{p}</span>
+                                                            {(isC || isL) && <Icon name="CheckCircle2" size={12} />}
                                                         </button>
                                                     );
                                                 })}
-                                                <button onClick={() => setModalTarget(student)} className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center transition-all ml-1 border ${leaveFrom ? 'bg-orange-100 text-orange-600 border-orange-200' : 'bg-orange-50 text-orange-400 border-orange-100'}`}>
-                                                    <span className="text-[8px] font-black mb-0.5 leading-none">조퇴</span>
-                                                    <Icon name="LogOut" size={14} />
+                                                <button onClick={() => setModalTarget(student)} className={`w-9 h-9 rounded-xl flex flex-col items-center justify-center transition-all border ${leaveFrom ? 'bg-orange-100 text-orange-600 border-orange-200 shadow-sm' : 'bg-orange-50 text-orange-400 border-orange-100'}`}>
+                                                    <span className="text-[7px] font-black mb-0.5 leading-none">조퇴</span>
+                                                    <Icon name="LogOut" size={12} />
+                                                </button>
+                                                {/* 경고 버튼 가로 크기 축소 (w-9 -> w-7.5) */}
+                                                <button onClick={() => setWarningModalTarget(student)} className={`w-[30px] h-9 rounded-xl flex flex-col items-center justify-center transition-all border ${warnings.length > 0 ? 'bg-red-100 text-red-600 border-red-200 shadow-sm' : 'bg-red-50 text-red-400 border-red-100'}`}>
+                                                    <span className="text-[7px] font-black mb-0.5 leading-none">경고</span>
+                                                    <Icon name="AlertTriangle" size={12} />
                                                 </button>
                                             </div>
                                         </div>
                                     );
                                 })}
                                 
-                                {/* 메모/전달사항 섹션 추가 */}
-                                <div className="mt-8 bg-white p-5 rounded-[2rem] border-2 border-dashed border-slate-200 shadow-sm print:hidden">
-                                    <div className="flex items-center justify-between mb-3 px-1">
-                                        <div className="flex items-center gap-2 text-slate-800 font-black text-sm tracking-tight">
-                                            <Icon name="MessageSquare" size={18} className="text-indigo-600" />
+                                <div className="mt-8 bg-white p-4 rounded-[2rem] border-2 border-dashed border-slate-200 shadow-sm print:hidden">
+                                    <div className="flex items-center justify-between mb-2 px-1">
+                                        <div className="flex items-center gap-2 text-slate-800 font-black text-xs tracking-tight">
+                                            <Icon name="MessageSquare" size={16} className="text-indigo-600" />
                                             전달사항 (감독교사 메모)
                                         </div>
-                                        <div className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
-                                            {isMemoSaving ? <Icon name="Loader2" size={10} className="animate-spin text-indigo-500" /> : <Icon name="CloudCheck" size={10} className="text-green-500" />}
+                                        <div className="text-[9px] font-bold text-slate-400 flex items-center gap-1">
+                                            {isMemoSaving ? <Icon name="Loader2" size={9} className="animate-spin text-indigo-500" /> : <Icon name="CloudCheck" size={9} className="text-green-500" />}
                                             {isMemoSaving ? "저장 중..." : "자동 저장됨"}
                                         </div>
                                     </div>
                                     <textarea 
-                                        className="w-full h-24 p-4 bg-slate-50 border-none rounded-2xl text-sm font-medium text-slate-700 focus:ring-2 focus:ring-indigo-100 placeholder:text-slate-300 resize-none transition-all"
+                                        className="w-full h-20 p-3 bg-slate-50 border-none rounded-2xl text-[13px] font-medium text-slate-700 focus:ring-2 focus:ring-indigo-100 placeholder:text-slate-300 resize-none transition-all"
                                         placeholder="오늘 야자 특이사항이나 다음 감독님께 전달할 내용을 입력하세요..."
                                         value={memoValue}
                                         onChange={(e) => setMemoValue(e.target.value)}
                                         onBlur={saveMemo}
                                     />
-                                    <p className="text-[10px] text-slate-400 mt-2 px-1 font-medium leading-relaxed italic">
-                                        * 입력 후 입력창 바깥을 클릭하면 다른 선생님들도 즉시 확인할 수 있습니다.
-                                    </p>
                                 </div>
                             </div>
                         )}
@@ -441,14 +448,14 @@
                                 <div className="space-y-3">
                                     <div className="bg-yellow-500/20 text-yellow-400 p-3 rounded-2xl flex items-center gap-3 border border-yellow-500/30 text-[11px] font-bold">
                                         <div className="w-8 h-8 bg-yellow-400 text-yellow-900 rounded-lg flex items-center justify-center font-black">톡</div>
-                                        <p>카톡인 경우: 우측 하단 <Icon name="MoreHorizontal" size={12} className="inline mx-0.5" /> 클릭 → [다른 브라우저로 열기] 선택 후 아래 진행</p>
+                                        <p>카톡인 경우: 우측 하단 <Icon name="MoreHorizontal" size={12} className="inline mx-0.5" /> 클릭 → [다른 브라우저로 열기] 선택</p>
                                     </div>
-                                    <div className="bg-slate-800/50 p-3 rounded-2xl flex items-center gap-3 border border-slate-700/30 text-[11px] font-bold text-left">
-                                        <div className="w-8 h-8 bg-blue-500/20 text-blue-400 rounded-lg flex items-center justify-center">iOS</div>
+                                    <div className="bg-slate-800/50 p-3 rounded-2xl flex items-center gap-3 border border-slate-700/30 text-[11px] font-bold">
+                                        <div className="w-8 h-8 bg-blue-500/20 text-blue-400 rounded-lg flex items-center justify-center font-black text-xs">iOS</div>
                                         <p>하단 <Icon name="Share" size={12} className="inline mx-0.5" /> 공유 버튼 → [홈 화면에 추가]</p>
                                     </div>
-                                    <div className="bg-slate-800/50 p-3 rounded-2xl flex items-center gap-3 border border-slate-700/30 text-[11px] font-bold text-left">
-                                        <div className="w-8 h-8 bg-green-500/20 text-green-400 rounded-lg flex items-center justify-center">AD</div>
+                                    <div className="bg-slate-800/50 p-3 rounded-2xl flex items-center gap-3 border border-slate-700/30 text-[11px] font-bold">
+                                        <div className="w-8 h-8 bg-green-500/20 text-green-400 rounded-lg flex items-center justify-center font-black text-xs">AD</div>
                                         <p>상단 <Icon name="MoreVertical" size={12} className="inline mx-0.5" /> 메뉴 버튼 → [홈 화면에 추가]</p>
                                     </div>
                                 </div>
@@ -456,14 +463,15 @@
                         </div>
                     )}
 
+                    {/* 조퇴 모달 */}
                     {modalTarget && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-900/70 backdrop-blur-md">
-                            <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-7 shadow-2xl">
+                            <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-7 shadow-2xl text-left">
                                 <div className="flex justify-between items-start mb-6">
                                     <div className="p-3 bg-orange-100 text-orange-600 rounded-2xl"><Icon name="LogOut" size={28} /></div>
                                     <button onClick={() => setModalTarget(null)}><Icon name="X" size={28} color="#94a3b8" /></button>
                                 </div>
-                                <div className="mb-8 text-left">
+                                <div className="mb-8">
                                     <h4 className="text-2xl font-black text-slate-800 tracking-tight leading-tight">{modalTarget.name} <span className="text-sm text-slate-400">{modalTarget.class}반</span></h4>
                                     <p className="text-slate-500 text-sm font-medium mt-1">조퇴 교시를 선택하세요.</p>
                                 </div>
@@ -477,54 +485,53 @@
                         </div>
                     )}
 
-                    {showReport && (
-                        <div className="fixed inset-0 z-[60] bg-white flex flex-col p-4 overflow-y-auto">
-                            <div className="flex justify-between items-center mb-6">
-                                <h2 className="text-2xl font-black">{selectedClass}반 주간 출석 리포트</h2>
-                                <button onClick={() => { setShowReport(false); setSelectedReportWeek(null); }} className="p-2 bg-slate-100 rounded-full"><Icon name="X" size={24} /></button>
+                    {/* 경고 관리 모달 */}
+                    {warningModalTarget && (() => {
+                        const warnings = attendance[`warning-${warningModalTarget.studentId}`] || [];
+                        const alreadyWarnedToday = warnings.some(w => w.day === selectedDay);
+                        
+                        return (
+                            <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-900/70 backdrop-blur-md">
+                                <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-7 shadow-2xl animate-slide-up text-left">
+                                    <div className="flex justify-between items-start mb-6">
+                                        <div className="p-3 bg-red-100 text-red-600 rounded-2xl"><Icon name="AlertTriangle" size={28} /></div>
+                                        <button onClick={() => setWarningModalTarget(null)}><Icon name="X" size={28} color="#94a3b8" /></button>
+                                    </div>
+                                    <div className="mb-6">
+                                        <h4 className="text-2xl font-black text-slate-800 tracking-tight leading-tight">{warningModalTarget.name} <span className="text-sm text-slate-400">경고 관리</span></h4>
+                                        <div className="mt-2 p-3 bg-red-50 rounded-xl">
+                                            <p className="text-red-700 text-xs font-bold uppercase tracking-tight">누적 경고: {warnings.length}회</p>
+                                        </div>
+                                    </div>
+                                    
+                                    {alreadyWarnedToday ? (
+                                        <div className="p-5 bg-amber-50 text-amber-700 rounded-2xl text-center font-bold text-sm mb-4 border border-amber-100">
+                                            이미 오늘 경고를 받았습니다.
+                                            <br/><span className="text-[10px] opacity-70 mt-1 block font-medium">경고는 하루에 한 번만 등록 가능합니다.</span>
+                                        </div>
+                                    ) : (
+                                        <div className="grid grid-cols-1 gap-2 max-h-[300px] overflow-y-auto no-scrollbar mb-4">
+                                            {WARNING_TYPES.map(type => (
+                                                <button key={type.id} onClick={() => addWarning(warningModalTarget.studentId, type.id)} className="flex items-center gap-3 px-5 py-4 bg-slate-50 hover:bg-red-50 border border-slate-100 rounded-2xl transition-all group">
+                                                    <Icon name={type.icon} size={18} className="text-slate-400 group-hover:text-red-500 shrink-0" />
+                                                    <span className="font-bold text-slate-700 group-hover:text-red-700 text-sm">{type.label}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                    
+                                    <button onClick={() => clearWarnings(warningModalTarget.studentId)} className="w-full py-3 text-slate-400 text-xs font-bold hover:text-red-500 transition-colors underline text-center">경고 기록 초기화</button>
+                                </div>
                             </div>
-                            <div className="flex flex-wrap gap-2 mb-6">
-                                {weekOptions.map(w => (
-                                    <button key={w.id} onClick={() => setSelectedReportWeek(w.id)} className={`px-4 py-2.5 rounded-xl text-xs font-bold border ${selectedReportWeek === w.id ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white text-slate-500'}`}>{w.label}</button>
-                                ))}
-                            </div>
-                            <div className="flex gap-2 mb-6">
-                                <button onClick={exportToCSV} className="flex-1 bg-green-600 text-white py-3 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg"><Icon name="FileDown" size={20} />CSV 저장</button>
-                                <button onClick={() => window.print()} className="flex-1 bg-slate-800 text-white py-3 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg"><Icon name="Printer" size={20} />인쇄</button>
-                            </div>
-                            <div className="border rounded-2xl overflow-x-auto shadow-sm bg-white">
-                                <table className="w-full text-left text-xs border-collapse min-w-[800px]">
-                                    <thead>
-                                        <tr className="bg-slate-50 border-b">
-                                            <th className="p-3 font-bold border-r sticky left-0 bg-slate-50 z-10 w-24">학번/이름</th>
-                                            {DAYS.map(d => <th key={d} className="p-3 font-bold border-r text-center" colSpan={3}>{d}요일</th>)}
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {students.map(s => (
-                                            <tr key={s.studentId} className="border-b hover:bg-slate-50 transition-colors">
-                                                <td className="p-2 border-r sticky left-0 bg-white z-10 font-bold">{s.name}</td>
-                                                {DAYS.map(d => [8,9,10].map(p => (
-                                                    <td key={`${d}-${p}`} className="p-2 text-center border-r">
-                                                        {reportAttendance[`${s.studentId}-${p}-${d}`] ? <div className="w-2.5 h-2.5 rounded-full bg-green-500 mx-auto"></div> : "-"}
-                                                    </td>
-                                                )))}
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    )}
+                        );
+                    })()}
 
                     <footer className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t py-4 px-6 flex justify-between items-center shadow-[0_-10px_25px_rgba(0,0,0,0.05)] z-40">
                         <div className="flex flex-col text-left">
-                            <div className="flex items-center gap-2.5 text-slate-700 font-black text-xs">
+                            <div className="flex items-center gap-2.5 text-slate-700 font-black text-xs tracking-tight">
                                 <Icon name="Calendar" size={16} color="#4f46e5" /> {realTime.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: 'numeric' })}
                             </div>
-                            <button onClick={() => setShowReport(true)} className="text-[10px] font-bold text-indigo-500 mt-1 flex items-center gap-1 hover:underline">
-                                <Icon name="Table" size={10} /> 리포트 및 데이터 관리
-                            </button>
+                            <div className="text-[10px] font-bold text-slate-400 mt-0.5">경일고 야자 출석 시스템</div>
                         </div>
                         <div className="px-3 py-1.5 bg-green-50 text-green-700 rounded-full text-[10px] font-black border border-green-100 flex items-center gap-1.5">
                             <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
