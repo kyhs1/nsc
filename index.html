@@ -61,7 +61,7 @@
         const DAYS = ['월', '화', '수', '목'];
         const PERIODS = [8, 9, 10];
 
-        // --- Lucide Icon Component (Fix) ---
+        // --- Lucide Icon Component ---
         const Icon = ({ name, size = 20, className = "", color = "currentColor", strokeWidth = 2, fill = "none" }) => {
             const iconData = lucide.icons[name];
             if (!iconData) return null;
@@ -87,7 +87,6 @@
         };
 
         function App() {
-            // 설정이 안되어있을 때 안내 화면
             if (!isConfigValid) {
                 return (
                     <div className="min-h-screen flex items-center justify-center p-6 bg-white">
@@ -261,6 +260,34 @@
                 setModalTarget(null);
             };
 
+            // 교시별 인원 통계 계산 (현재 출석 인원 / 총 신청 인원)
+            const periodStats = useMemo(() => {
+                const stats = { 
+                    8: { present: 0, total: 0 }, 
+                    9: { present: 0, total: 0 }, 
+                    10: { present: 0, total: 0 } 
+                };
+                
+                students.forEach(s => {
+                    PERIODS.forEach(p => {
+                        // 해당 교시를 신청했는지 확인
+                        if (s.schedule[selectedDay][p]) {
+                            stats[p].total++;
+                            
+                            const isChecked = attendance[`${s.studentId}-${p}-${selectedDay}`];
+                            const leaveFrom = attendance[`${s.studentId}-leaveFrom-${selectedDay}`];
+                            const hasLeft = leaveFrom && p >= leaveFrom;
+                            
+                            // 출석 체크가 되어있고 조퇴하지 않은 경우만 '현재 출석'으로 카운트
+                            if (isChecked && !hasLeft) {
+                                stats[p].present++;
+                            }
+                        }
+                    });
+                });
+                return stats;
+            }, [students, selectedDay, attendance]);
+
             const exportToCSV = () => {
                 const weekLabel = weekOptions.find(w => w.id === selectedReportWeek)?.label || "데이터";
                 const header = ["학번", "성명", "요일", "8교시", "9교시", "10교시", "조퇴여부"];
@@ -330,7 +357,12 @@
                                     {PERIODS.map(p => (
                                         <div key={p} className="bg-white/10 rounded-2xl p-2 px-3 border border-white/5 backdrop-blur-sm flex items-center justify-between print:border-black print:text-black">
                                             <span className="text-base font-bold opacity-80 leading-none">{p}교시</span>
-                                            <span className="text-lg font-black tracking-tighter leading-none">{students.filter(s => attendance[`${s.studentId}-${p}-${selectedDay}`] || (attendance[`${s.studentId}-leaveFrom-${selectedDay}`] && p >= attendance[`${s.studentId}-leaveFrom-${selectedDay}`])).length}<span className="text-[10px] font-medium opacity-60 ml-0.5">명</span></span>
+                                            <div className="flex items-baseline">
+                                                <span className="text-lg font-black tracking-tighter leading-none">{periodStats[p].present}</span>
+                                                <span className="text-[10px] font-medium opacity-60 mx-0.5">/</span>
+                                                <span className="text-[10px] font-bold opacity-80 leading-none">{periodStats[p].total}</span>
+                                                <span className="text-[10px] font-medium opacity-60 ml-0.5">명</span>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
