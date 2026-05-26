@@ -623,7 +623,8 @@
                             </div>
                             <div className="flex gap-2 mb-6 text-left">
                                 <button onClick={exportToCSV} className="flex-1 bg-green-600 text-white py-3 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all"><Icon name="FileDown" size={20} />CSV 저장</button>
-                                <button onClick={() => window.print()} className="flex-1 bg-slate-800 text-white py-3 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all"><Printer size={20} />인쇄하기</button>
+                                {/* Printer 아이콘 컴포넌트를 정의되지 않은 <Printer />에서 <Icon name="Printer" />로 바르게 수정했습니다. */}
+                                <button onClick={() => window.print()} className="flex-1 bg-slate-800 text-white py-3 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all"><Icon name="Printer" size={20} />인쇄하기</button>
                             </div>
                             <div className="border rounded-2xl overflow-x-auto shadow-sm bg-white text-left">
                                 <table className="w-full text-left text-xs border-collapse min-w-[800px]">
