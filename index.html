@@ -11,7 +11,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>경일고 야자 출석체크</title>
-    
+
     <!-- 바탕화면 아이콘 및 바로가기 설정 -->
     <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%234f46e5'/%3E%3Cpath d='M50 90l25 25 55-55' stroke='white' stroke-width='16' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%234f46e5'/%3E%3Cpath d='M50 90l25 25 55-55' stroke='white' stroke-width='16' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
@@ -53,9 +53,9 @@
     <script type="text/babel" data-type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot, collection, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, getDoc, arrayUnion, arrayRemove, deleteField } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        const { useState, useEffect, useMemo } = React;
+        const { useState, useEffect, useMemo, useRef, useCallback } = React;
 
         const firebaseConfig = {
             apiKey: "AIzaSyDnWUI3NFq7tt25AeOdE5TBmF_M_K-Am2k",
@@ -68,20 +68,20 @@
 
         const isConfigValid = firebaseConfig.apiKey !== "";
         let auth, db;
-        const APP_ID = "night-study-v1"; 
+        const APP_ID = "night-study-v1";
         if (isConfigValid) {
             const app = initializeApp(firebaseConfig);
             auth = getAuth(app);
             db = getFirestore(app);
         }
 
-        // --- 구글 시트 연동 정보 (선생님께서 보내주신 새로운 주소 반영 완료!) ---
+        // --- 구글 시트 연동 정보 ---
         const SPREADSHEET_ID = '1AAn8pZUwS6vtftGLc-GhG38fVTaBWFbAkFFOBuEvD8c';
         const TEACHER_SPREADSHEET_ID = '1esNfg6ZVFLrgBIxwz4zNv29_msJ5hJHQWSWrL3aFoRM';
         const CLASSES = ['1-2', '1-3', '1-4', '1-5', '1-6'];
         const DAYS = ['월', '화', '수', '목'];
         const PERIODS = [8, 9, 10];
-        
+
         const WARNING_TYPES = [
             { id: 1, label: "휴대폰 관련", icon: "Smartphone" },
             { id: 2, label: "태블릿 관련", icon: "Tablet" },
@@ -117,7 +117,7 @@
             const [user, setUser] = useState(null);
             const [viewMode, setViewMode] = useState('current');
             const [selectedClass, setSelectedClass] = useState('1-2');
-            
+
             // 오늘 요일 자동 선택 초기 설정
             const getInitialDay = () => {
                 const today = new Date().getDay();
@@ -128,17 +128,21 @@
 
             const [attendance, setAttendance] = useState({});
             const [historyData, setHistoryData] = useState({});
-            const [students, setStudents] = useState([]); 
-            const [teachers, setTeachers] = useState([]); 
+            const [students, setStudents] = useState([]);
+            const [teachers, setTeachers] = useState([]);
             const [isLoading, setIsLoading] = useState(true);
             const [modalTarget, setModalTarget] = useState(null);
-            const [warningModalTarget, setWarningModalTarget] = useState(null); 
+            const [warningModalTarget, setWarningModalTarget] = useState(null);
             const [showReport, setShowReport] = useState(false);
             const [reportAttendance, setReportAttendance] = useState({});
             const [selectedReportWeek, setSelectedReportWeek] = useState(null);
             const [realTime, setRealTime] = useState(new Date());
             const [memoValue, setMemoValue] = useState("");
-            const [isMemoSaving, setIsMemoSaving] = useState(false);
+            const [memoStatus, setMemoStatus] = useState("saved"); // saved | dirty | saving
+
+            // 메모 입력 중에는 다른 선생님의 동기화가 내 타이핑을 덮지 않도록 잠금
+            const memoFocusRef = useRef(false);
+            const memoTimerRef = useRef(null);
 
             useEffect(() => {
                 const timer = setInterval(() => setRealTime(new Date()), 60000);
@@ -214,45 +218,40 @@
 
             useEffect(() => { if(user) fetchData(selectedClass); }, [selectedClass, user]);
 
+            // 실시간 구독 (요일/보기모드와 무관하게 주 단위로 한 번만 구독)
             useEffect(() => {
                 if (!user) return;
                 const currentWeekId = getWeekIdentifier(new Date());
                 const lastWeekId = getWeekIdentifier(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
-                
-                const unsubCurrent = onSnapshot(doc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'attendance'), currentWeekId), (s) => {
-                    if (s.exists()) {
-                        const data = s.data();
-                        setAttendance(data);
-                        if (viewMode === 'current') setMemoValue(data[`memo-${selectedDay}`] || "");
-                    }
-                });
 
-                const unsubHistory = onSnapshot(doc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'attendance'), lastWeekId), (s) => {
-                    if (s.exists()) {
-                        const data = s.data();
-                        setHistoryData(data);
-                        if (viewMode === 'history') setMemoValue(data[`memo-${selectedDay}`] || "");
-                    }
-                });
+                const unsubCurrent = onSnapshot(doc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'attendance'), currentWeekId),
+                    (s) => setAttendance(s.exists() ? s.data() : {}));
+
+                const unsubHistory = onSnapshot(doc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'attendance'), lastWeekId),
+                    (s) => setHistoryData(s.exists() ? s.data() : {}));
 
                 return () => { unsubCurrent(); unsubHistory(); };
-            }, [user, selectedDay, viewMode]);
+            }, [user]);
+
+            // 메모 화면 동기화 (입력 중에는 덮어쓰지 않음)
+            useEffect(() => {
+                if (memoFocusRef.current) return;
+                const data = viewMode === 'current' ? attendance : historyData;
+                setMemoValue(data[`memo-${selectedDay}`] || "");
+                setMemoStatus("saved");
+            }, [selectedDay, viewMode, attendance, historyData]);
 
             // 리포트용 데이터 불러오기 로직
             useEffect(() => {
                 const fetchOldData = async () => {
                     if (!user || !showReport || !selectedReportWeek) return;
                     const currentWeekId = getWeekIdentifier(new Date());
-                    if (selectedReportWeek === currentWeekId) return; 
+                    if (selectedReportWeek === currentWeekId) return;
 
                     try {
                         const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'attendance', selectedReportWeek);
                         const docSnap = await getDoc(docRef);
-                        if (docSnap.exists()) {
-                            setReportAttendance(docSnap.data());
-                        } else {
-                            setReportAttendance({});
-                        }
+                        setReportAttendance(docSnap.exists() ? docSnap.data() : {});
                     } catch (e) { console.error(e); }
                 };
                 fetchOldData();
@@ -277,11 +276,11 @@
             // 감독교사 매칭 로직 (엑셀 전수 조사형)
             const currentTeacher = useMemo(() => {
                 if (teachers.length === 0) return "불러오는 중...";
-                
+
                 const m = targetDate.getMonth() + 1;
                 const d = targetDate.getDate();
-                const dayStr = selectedDay; 
-                
+                const dayStr = selectedDay;
+
                 const searchPatterns = [
                     `${m}/${d}(${dayStr})`,
                     `${m}/${d}`,
@@ -289,15 +288,15 @@
                     `${m}월${d}일`,
                     `${m}.${d}`
                 ];
-                
+
                 let foundRow = -1;
                 let foundCol = -1;
 
                 for (let r = 0; r < teachers.length; r++) {
                     for (let c = 0; c < teachers[r].length; c++) {
                         const cellValue = teachers[r][c]?.replace(/\s/g, '') || "";
-                        if (cellValue.includes(searchPatterns[0].replace(/\s/g, '')) || 
-                            cellValue === `${m}월${d}일` || 
+                        if (cellValue.includes(searchPatterns[0].replace(/\s/g, '')) ||
+                            cellValue === `${m}월${d}일` ||
                             cellValue === `${m}/${d}`) {
                             foundRow = r;
                             foundCol = c;
@@ -315,7 +314,7 @@
                         return isValidName ? name : "없음";
                     }
                 }
-                
+
                 return "없음";
             }, [teachers, targetDate, selectedDay]);
 
@@ -335,65 +334,107 @@
             const activeReportData = useMemo(() => {
                 const currentWeekId = getWeekIdentifier(new Date());
                 if (selectedReportWeek === currentWeekId) {
-                    return attendance; 
+                    return attendance;
                 }
-                return reportAttendance; 
+                return reportAttendance;
             }, [selectedReportWeek, attendance, reportAttendance]);
+
+            // =====================================================================
+            // 핵심: 바뀐 "필드 하나"만 병합(merge) 저장한다.
+            // 예전 코드처럼 attendance 전체를 setDoc 하면, 내 브라우저의 낡은 사본이
+            // 문서를 통째로 덮어써서 다른 선생님이 방금 입력한 기록이 사라진다.
+            // merge:true + 변경 필드만 보내면 필드 단위로 독립 저장되어 충돌이 없다.
+            // =====================================================================
+            const weekDocRef = useCallback(
+                () => doc(db, 'artifacts', APP_ID, 'public', 'data', 'attendance', getWeekIdentifier(new Date())),
+                []
+            );
+
+            const patchAttendance = useCallback(async (serverPatch, localPatch) => {
+                // 화면 반응성을 위한 낙관적 반영 (내 키만 덮어씀 — 남의 키는 건드리지 않음)
+                setAttendance(prev => ({ ...prev, ...(localPatch || serverPatch) }));
+                try {
+                    await setDoc(weekDocRef(), serverPatch, { merge: true });
+                } catch (e) { console.error(e); }
+            }, [weekDocRef]);
 
             const toggleAttendance = (sId, p) => {
                 if (viewMode === 'history') return;
                 const key = `${sId}-${p}-${selectedDay}`;
-                const next = { ...attendance, [key]: !attendance[key] };
-                saveDataToFirebase(next);
+                patchAttendance({ [key]: !attendance[key] });
             };
 
             const setEarlyLeave = (sId, p) => {
                 if (viewMode === 'history') return;
-                const next = { ...attendance, [`${sId}-leaveFrom-${selectedDay}`]: p };
-                saveDataToFirebase(next);
+                const key = `${sId}-leaveFrom-${selectedDay}`;
+                if (p === null) patchAttendance({ [key]: deleteField() }, { [key]: null });
+                else patchAttendance({ [key]: p });
                 setModalTarget(null);
             };
-            
-            const addWarning = (sId, typeId) => {
+
+            const addWarning = async (sId, typeId) => {
                 if (viewMode === 'history') return;
                 const key = `warning-${sId}`;
                 const currentWarnings = attendance[key] || [];
-                const alreadyWarnedToday = currentWarnings.some(w => w.day === selectedDay);
-                if (alreadyWarnedToday) return;
+                if (currentWarnings.some(w => w.day === selectedDay)) return;
 
                 const newWarning = { typeId, teacher: currentTeacher, date: new Date().toISOString(), day: selectedDay };
-                const next = { ...attendance, [key]: [...currentWarnings, newWarning] };
-                saveDataToFirebase(next);
+                setAttendance(prev => ({ ...prev, [key]: [...(prev[key] || []), newWarning] }));
+                try {
+                    // arrayUnion: 다른 선생님이 동시에 추가한 경고도 보존되는 원자적 추가
+                    await setDoc(weekDocRef(), { [key]: arrayUnion(newWarning) }, { merge: true });
+                } catch (e) { console.error(e); }
                 setWarningModalTarget(null);
             };
 
-            const clearTodayWarning = (sId) => {
+            const clearTodayWarning = async (sId) => {
                 if (viewMode === 'history') return;
                 const key = `warning-${sId}`;
-                const currentWarnings = attendance[key] || [];
-                const next = { ...attendance, [key]: currentWarnings.filter(w => w.day !== selectedDay) };
-                saveDataToFirebase(next);
+                const toRemove = (attendance[key] || []).filter(w => w.day === selectedDay);
+                if (toRemove.length === 0) { setWarningModalTarget(null); return; }
+
+                setAttendance(prev => ({ ...prev, [key]: (prev[key] || []).filter(w => w.day !== selectedDay) }));
+                try {
+                    await setDoc(weekDocRef(), { [key]: arrayRemove(...toRemove) }, { merge: true });
+                } catch (e) { console.error(e); }
                 setWarningModalTarget(null);
             };
 
-            const saveDataToFirebase = async (data) => {
-                setAttendance(data);
-                try { await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'attendance', getWeekIdentifier(new Date())), data); } catch (e) { console.error(e); }
+            // 메모: 필드 하나만 저장 + 1.2초 자동 저장 + 포커스 해제 시 즉시 저장
+            const saveMemo = useCallback(async (val, day) => {
+                if (!user || viewMode === 'history') return;
+                setMemoStatus("saving");
+                try {
+                    await setDoc(weekDocRef(), { [`memo-${day}`]: val }, { merge: true });
+                    setMemoStatus("saved");
+                } catch (e) { console.error(e); setMemoStatus("dirty"); }
+            }, [user, viewMode, weekDocRef]);
+
+            const handleMemoChange = (val) => {
+                setMemoValue(val);
+                if (viewMode === 'history') return;
+                setMemoStatus("dirty");
+                clearTimeout(memoTimerRef.current);
+                const day = selectedDay;
+                memoTimerRef.current = setTimeout(() => saveMemo(val, day), 1200);
             };
 
-            const saveMemo = async () => {
-                if (!user || isMemoSaving || viewMode === 'history') return;
-                setIsMemoSaving(true);
-                try {
-                    const next = { ...attendance, [`memo-${selectedDay}`]: memoValue };
-                    await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'attendance', getWeekIdentifier(new Date())), next);
-                } catch (e) { console.error(e); } finally { setIsMemoSaving(false); }
+            const handleMemoBlur = () => {
+                memoFocusRef.current = false;
+                if (viewMode === 'history') return;
+                clearTimeout(memoTimerRef.current);
+                saveMemo(memoValue, selectedDay);
             };
+
+            // 요일/주차를 바꾸면 대기 중인 저장 타이머는 취소 (엉뚱한 요일에 저장되는 것 방지)
+            useEffect(() => {
+                return () => clearTimeout(memoTimerRef.current);
+            }, [selectedDay, viewMode]);
 
             const exportToCSV = () => {
                 const weekLabel = weekOptions.find(w => w.id === selectedReportWeek)?.label || "데이터";
                 const header = ["학번", "성명", "요일", "8교시", "9교시", "10교시", "조퇴여부", "경고횟수"];
-                const rows = students.flatMap(s => 
+                const rows = students.flatMap(s =>
                     DAYS.filter(d => s.schedule[d][8] || s.schedule[d][9] || s.schedule[d][10]).map(d => {
                         const data = activeReportData;
                         const leave = data[`${s.studentId}-leaveFrom-${d}`];
@@ -408,7 +449,7 @@
                         ];
                     })
                 );
-                const csvContent = "\uFEFF" + [header, ...rows].map(e => e.join(",")).join("\n");
+                const csvContent = "﻿" + [header, ...rows].map(e => e.join(",")).join("\n");
                 const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                 const link = document.createElement("a");
                 link.href = URL.createObjectURL(blob);
@@ -483,7 +524,7 @@
                                     const leaveFrom = data[`${student.studentId}-leaveFrom-${selectedDay}`];
                                     const warnings = data[`warning-${student.studentId}`] || [];
                                     const isFemale = student.gender === '여' || student.gender === '여성';
-                                    
+
                                     let warningStyle = "border-2 border-transparent";
                                     if (warnings.length === 1) warningStyle = "border-2 border-yellow-400";
                                     else if (warnings.length === 2) warningStyle = "border-2 border-orange-500";
@@ -513,7 +554,6 @@
                                                     const isL = leaveFrom && p >= leaveFrom;
                                                     return (
                                                         <button key={p} disabled={!hasS || viewMode === 'history'} onClick={() => toggleAttendance(student.studentId, p)} className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center transition-all ${!hasS ? 'bg-slate-50 text-slate-100 border border-slate-100 opacity-10' : isL ? 'bg-orange-500 text-white shadow-md' : isC ? 'bg-green-500 text-white shadow-md' : 'bg-slate-100 text-slate-400 border border-slate-200/50'}`}>
-                                                            {/* 교시 글자 폰트 사이즈 키움 (13px) */}
                                                             <span className="text-[13px] font-black mb-0.5 leading-none">{p}</span>
                                                             {(isC || isL) && <Icon name="CheckCircle2" size={12} />}
                                                         </button>
@@ -531,7 +571,7 @@
                                         </div>
                                     );
                                 })}
-                                
+
                                 <div className="mt-8 bg-white p-4 rounded-[2rem] border-2 border-dashed border-slate-200 shadow-sm print:hidden text-left">
                                     <div className="flex items-center justify-between mb-2 px-1 text-left">
                                         <div className="flex items-center gap-2 text-slate-800 font-black text-xs tracking-tight">
@@ -539,17 +579,21 @@
                                             전달사항 (감독교사 메모)
                                         </div>
                                         <div className="text-[9px] font-bold text-slate-400 flex items-center gap-1">
-                                            {isMemoSaving ? <Icon name="Loader2" size={9} className="animate-spin text-indigo-500" /> : <Icon name="CloudCheck" size={9} className="text-green-500" />}
-                                            {isMemoSaving ? "저장 중..." : "자동 저장됨"}
+                                            {memoStatus === "saving"
+                                                ? <><Icon name="Loader2" size={9} className="animate-spin text-indigo-500" />저장 중...</>
+                                                : memoStatus === "dirty"
+                                                    ? <><Icon name="Pencil" size={9} className="text-amber-500" />입력 중...</>
+                                                    : <><Icon name="CloudCheck" size={9} className="text-green-500" />자동 저장됨</>}
                                         </div>
                                     </div>
-                                    <textarea 
+                                    <textarea
                                         className="w-full h-20 p-3 bg-slate-50 border-none rounded-2xl text-[13px] font-medium text-slate-700 focus:ring-2 focus:ring-indigo-100 placeholder:text-slate-300 resize-none transition-all text-left"
                                         placeholder={viewMode === 'history' ? "지난주 메모입니다." : "오늘 야자 특이사항이나 다음 감독님께 전달할 내용을 입력하세요..."}
                                         value={memoValue}
                                         readOnly={viewMode === 'history'}
-                                        onChange={(e) => setMemoValue(e.target.value)}
-                                        onBlur={saveMemo}
+                                        onFocus={() => { memoFocusRef.current = true; }}
+                                        onChange={(e) => handleMemoChange(e.target.value)}
+                                        onBlur={handleMemoBlur}
                                     />
                                 </div>
                             </div>
@@ -580,7 +624,7 @@
                     {warningModalTarget && (() => {
                         const warnings = attendance[`warning-${warningModalTarget.studentId}`] || [];
                         const alreadyWarnedToday = warnings.some(w => w.day === selectedDay);
-                        
+
                         return (
                             <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-900/70 backdrop-blur-md text-left">
                                 <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-7 shadow-2xl animate-slide-up text-left">
@@ -594,7 +638,7 @@
                                             <p className="text-red-700 text-xs font-bold uppercase tracking-tight text-left">누적 경고: {warnings.length}회</p>
                                         </div>
                                     </div>
-                                    
+
                                     {alreadyWarnedToday ? (
                                         <div className="p-5 bg-amber-50 text-amber-700 rounded-2xl text-center font-bold text-sm mb-4 border border-amber-100 text-center">
                                             이미 오늘 경고를 받았습니다.
@@ -610,7 +654,7 @@
                                             ))}
                                         </div>
                                     )}
-                                    
+
                                     <button onClick={() => clearTodayWarning(warningModalTarget.studentId)} className="w-full py-3 text-slate-400 text-xs font-bold hover:text-red-500 transition-colors underline text-center">오늘 경고 취소</button>
                                 </div>
                             </div>
@@ -630,7 +674,6 @@
                             </div>
                             <div className="flex gap-2 mb-6 text-left">
                                 <button onClick={exportToCSV} className="flex-1 bg-green-600 text-white py-3 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all"><Icon name="FileDown" size={20} />CSV 저장</button>
-                                {/* Printer 아이콘 컴포넌트를 정의되지 않은 <Printer />에서 <Icon name="Printer" />로 바르게 수정했습니다. */}
                                 <button onClick={() => window.print()} className="flex-1 bg-slate-800 text-white py-3 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all"><Icon name="Printer" size={20} />인쇄하기</button>
                             </div>
                             <div className="border rounded-2xl overflow-x-auto shadow-sm bg-white text-left">
@@ -671,7 +714,7 @@
                     <footer className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t py-4 px-6 flex justify-between items-center shadow-[0_-10px_25px_rgba(0,0,0,0.05)] z-40 text-left">
                         <div className="flex flex-col text-left">
                             <div className="flex items-center gap-2.5 text-slate-700 font-black text-[11px] tracking-tight text-left">
-                                <Icon name="Calendar" size={14} color="#4f46e5" /> 
+                                <Icon name="Calendar" size={14} color="#4f46e5" />
                                 {realTime.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'long' })} {realTime.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: 'numeric' })}
                             </div>
                             <button onClick={() => setShowReport(true)} className="text-[10px] font-bold text-indigo-500 mt-0.5 flex items-center gap-1 hover:underline text-left tracking-tight">
