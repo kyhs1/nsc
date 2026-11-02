@@ -78,6 +78,7 @@
         // --- 구글 시트 연동 정보 ---
         const SPREADSHEET_ID = '1AAn8pZUwS6vtftGLc-GhG38fVTaBWFbAkFFOBuEvD8c';         // 출석부 파일 (1-1 ~ 1-11, 교실배정 시트)
         const TEACHER_SPREADSHEET_ID = '1esNfg6ZVFLrgBIxwz4zNv29_msJ5hJHQWSWrL3aFoRM';  // 감독교사 표
+        const TEACHER_SHEET_GIDS = [1780007714, 1155665970];                             // 2학기 감독표, 1학기 감독표
         const HOMEROOMS = Array.from({ length: 11 }, (_, i) => `1-${i + 1}`);            // 원래 반 시트 이름
         const ASSIGN_SHEET = '교실배정';                                                  // 담당교사가 관리하는 배정표 시트
         const DAYS = ['월', '화', '수', '목'];
@@ -233,10 +234,17 @@
                 try {
                     const isT = (v) => v && (v.toUpperCase() === 'TRUE' || v === '1' || v === 'T');
 
+                    // 감독표: 2학기·1학기 시트를 모두 읽어 날짜를 찾는다 (학기가 바뀌어도 코드 수정 불필요)
                     const fetchTeacherRows = async () => {
-                        const url = `https://docs.google.com/spreadsheets/d/${TEACHER_SPREADSHEET_ID}/gviz/tq?tqx=out:csv&gid=1155665970`;
-                        const res = await fetch(url, { cache: 'no-store' });
-                        return parseCsv(await res.text());
+                        const lists = await Promise.all(TEACHER_SHEET_GIDS.map(async (gid) => {
+                            try {
+                                const url = `https://docs.google.com/spreadsheets/d/${TEACHER_SPREADSHEET_ID}/gviz/tq?tqx=out:csv&headers=0&gid=${gid}`;
+                                const res = await fetch(url, { cache: 'no-store' });
+                                return parseCsv(await res.text());
+                            } catch (e) { console.error(e); return []; }
+                        }));
+                        // 시트 사이에 빈 행을 넣어, 한 시트의 마지막 날짜 행이 다음 시트 첫 행과 이어지지 않게 함
+                        return lists.flatMap(rows => [...rows, []]);
                     };
 
                     const [classRowsList, assignRows, teacherRows] = await Promise.all([
