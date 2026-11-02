@@ -459,16 +459,17 @@
             }, [students, selectedDay, selectedRoom, attendance, historyData, viewMode, isHere]);
 
             // =====================================================================
-            // 이번 달 출석률 (보조 지표): 이번 달 1일 ~ 오늘, 월~목
+            // 이번 달 출석률 (보조 지표): 이번 달 1일 ~ 어제(전일), 월~목
             // - 조퇴 이후 교시는 출석으로 인정 (무단 이탈만 걸러내는 목적)
             // - 그 날 그 교실·교시에 아무 체크도 없으면 '미기록'으로 보고 계산에서 제외
-            //   (야자가 없던 날, 아직 시작 전인 오늘 교시가 결석으로 잡히지 않게 함)
+            //   (야자가 없던 날이 결석으로 잡히지 않게 함)
             // =====================================================================
             const monthDates = useMemo(() => {
                 const now = new Date();
+                const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());  // 오늘 0시: 오늘 야자는 제외
                 const dayNames = { 1: '월', 2: '화', 3: '수', 4: '목' };
                 const list = [];
-                for (let d = new Date(now.getFullYear(), now.getMonth(), 1); d <= now; d.setDate(d.getDate() + 1)) {
+                for (let d = new Date(now.getFullYear(), now.getMonth(), 1); d < today0; d.setDate(d.getDate() + 1)) {
                     const day = dayNames[d.getDay()];
                     if (day) list.push({ weekId: getWeekIdentifier(d), day });
                 }
@@ -774,7 +775,7 @@
                                                                 <div className="flex items-center gap-1.5 text-left">
                                                                     <p className="text-xs text-slate-500 font-bold leading-none shrink-0">{student.studentId}</p>
                                                                     {monthlyRates[student.studentId] && (
-                                                                        <span title={`이번 달 출석 ${monthlyRates[student.studentId].present}/${monthlyRates[student.studentId].total}교시 (조퇴 포함)`} className={`text-[9px] font-black leading-none px-1 py-0.5 rounded flex items-center gap-0.5 shrink-0 ${monthlyRates[student.studentId].low ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-400'}`}>
+                                                                        <span title={`이번 달 전일까지 출석 ${monthlyRates[student.studentId].present}/${monthlyRates[student.studentId].total}교시 (조퇴 포함)`} className={`text-[9px] font-black leading-none px-1 py-0.5 rounded flex items-center gap-0.5 shrink-0 ${monthlyRates[student.studentId].low ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-400'}`}>
                                                                             {monthlyRates[student.studentId].low && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>}
                                                                             이달 {monthlyRates[student.studentId].pct}%
                                                                         </span>
