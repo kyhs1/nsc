@@ -49,7 +49,9 @@ body{font-family:'Noto Sans KR','Malgun Gothic',system-ui,sans-serif;color:var(-
 #tt .pn small{font-size:12px;font-weight:500;color:var(--muted)}
 #tt .c{height:58px;min-width:0;padding:0 2px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
   border-left:1px solid var(--line);border-bottom:1px solid var(--line);overflow:hidden;white-space:nowrap;line-height:1.15}
-#tt .c.gs{border-left:2px solid var(--line2)}
+#tt .c.gs,#tt .ch.gs{border-left:2px solid var(--line2)}
+/* 학년 구분선: 2학년·3학년 시작 열 왼쪽에 굵은 2줄 */
+#tt .gb{border-left:7px double #C5CFD9 !important}
 #tt .c .te{font-size:16px;font-weight:700;color:var(--text)}
 #tt .c .sj{font-size:13px;font-weight:500;color:var(--muted)}
 #tt .c .sj i{font-style:normal;font-size:10px;font-weight:700;margin-right:1px}
@@ -371,19 +373,18 @@ function renderTimetable() {
 
   // 머리줄: 학년, 반
   tt.appendChild(el('div', 'corner', ''));
-  grades.forEach(function (g) {
-    var h = el('div', 'gh', g + '학년');
+  grades.forEach(function (g, gi) {
+    var h = el('div', 'gh' + (gi > 0 ? ' gb' : ''), g + '학년');
     h.style.gridColumn = 'span ' + CONFIG.CLASSES[g];
     h.style.background = CONFIG.GRADE_COLORS[g];
     tt.appendChild(h);
   });
   var corner = el('div', 'ch', '교시'); corner.style.borderLeft = '0'; corner.style.fontSize = '13px'; corner.style.color = 'var(--muted)';
   tt.appendChild(corner);
-  grades.forEach(function (g) {
+  grades.forEach(function (g, gi) {
     for (var c = 1; c <= CONFIG.CLASSES[g]; c++) {
-      var h = el('div', 'ch' + (c === 1 ? ' gs' : ''), String(c));
+      var h = el('div', 'ch' + (c === 1 ? ' gs' : '') + (c === 1 && gi > 0 ? ' gb' : ''), String(c));
       h.style.color = CONFIG.GRADE_COLORS[g];
-      if (c === 1) h.style.borderLeft = '2px solid var(--line2)';
       tt.appendChild(h);
     }
   });
@@ -405,7 +406,7 @@ function renderTimetable() {
         var v = ch ? (over[k] || { s: '', t: '' }) : b;
         var isChg = ch && (v.s !== b.s || v.t !== b.t);
         if (isChg) changed++;
-        var cell = el('div', 'c' + (c === 1 ? ' gs' : '') + rowCls + (gi === lastCol && c === CONFIG.CLASSES[g] ? ' last' : '') +
+        var cell = el('div', 'c' + (c === 1 ? ' gs' : '') + (c === 1 && gi > 0 ? ' gb' : '') + rowCls + (gi === lastCol && c === CONFIG.CLASSES[g] ? ' last' : '') +
           (isChg ? ' chg' : '') + (/^공강/.test(v.s) || !v.s ? ' free' : ''));
         // 교무실에서는 선생님 이름이 우선이므로 이름을 위에 크게, 과목을 아래에 작게 씁니다
         if (v.t) cell.appendChild(el('div', 'te', v.t));
