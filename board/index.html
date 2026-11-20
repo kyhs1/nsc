@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>경일고 교무실 현황판</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap">
+<style>
+:root{
+  --bg:#0F1419; --panel:#182028; --panel2:#222D38; --panel3:#1C252E; --line:#2C3946; --line2:#3E4C5A;
+  --text:#E8EDF2; --sub:#C5CFD9; --muted:#9AA7B4; --dim:#6F7C8A;
+  --accent:#F2B544; --chg:#F2B544; --chgText:#141A20;
+  --g1:#7FB2F0; --g2:#5FD3BF; --g3:#F0A58A;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);overflow:hidden}
+body{font-family:'Noto Sans KR','Malgun Gothic',system-ui,sans-serif;color:var(--text)}
+#stage{position:absolute;left:0;top:0;width:1920px;height:1080px;transform-origin:0 0;
+  padding:22px 44px;display:flex;flex-direction:column;gap:12px}
+
+/* 머리줄 */
+.head{height:58px;display:flex;align-items:center;justify-content:space-between;flex:none}
+.head h1{margin:0;font-size:36px;font-weight:900;letter-spacing:-1px}
+.head .right{display:flex;align-items:center;gap:24px}
+#chip{font-size:22px;font-weight:700;color:#141A20;background:var(--accent);border-radius:10px;padding:8px 16px}
+#chip.off{background:var(--panel2);color:var(--sub)}
+#date{font-size:26px;font-weight:500;color:var(--sub)}
+#clock{font-size:50px;font-weight:900;letter-spacing:-1px;font-variant-numeric:tabular-nums}
+
+/* 구역 제목 */
+.bar{height:28px;display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex:none}
+.bar .t{font-size:22px;font-weight:700;color:var(--accent);white-space:nowrap}
+.bar .t small{font-size:18px;font-weight:700;margin-left:10px;padding:2px 10px;border-radius:6px;background:var(--panel2);color:var(--sub)}
+.bar .t small.chg{background:var(--chg);color:var(--chgText)}
+.bar .s{font-size:16px;color:var(--muted);white-space:nowrap}
+.bar .s.warn{color:var(--accent);font-weight:700}
+
+/* 시간표 */
+.tt{flex:none;display:flex;flex-direction:column;gap:6px}
+#tt{display:grid;grid-template-columns:52px repeat(35,minmax(0,1fr));background:var(--panel);border-radius:8px;overflow:hidden}
+#tt .gh{height:30px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;color:#141A20}
+#tt .ch{height:26px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;
+  border-left:1px solid var(--line);border-bottom:2px solid var(--line2)}
+#tt .corner{display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:var(--muted)}
+#tt .pn{display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:22px;font-weight:900;color:var(--sub);
+  border-bottom:1px solid var(--line);line-height:1.1}
+#tt .pn small{font-size:12px;font-weight:500;color:var(--muted)}
+#tt .c{height:58px;min-width:0;padding:0 2px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+  border-left:1px solid var(--line);border-bottom:1px solid var(--line);overflow:hidden;white-space:nowrap;line-height:1.15}
+#tt .c.gs{border-left:2px solid var(--line2)}
+#tt .c .sj{font-size:15px;font-weight:700;color:var(--text)}
+#tt .c .sj i{font-style:normal;font-size:11px;font-weight:700;color:var(--muted);margin-right:1px}
+#tt .c .te{font-size:13px;font-weight:500;color:var(--muted)}
+#tt .c.free .sj{color:var(--dim);font-weight:500}
+#tt .c.free .te{color:var(--dim)}
+#tt .c.chg{background:var(--chg)}
+#tt .c.chg .sj,#tt .c.chg .te,#tt .c.chg .sj i{color:var(--chgText)}
+#tt .past{opacity:.38}
+#tt .past.chg{opacity:.7}
+#tt .now{box-shadow:inset 0 3px 0 var(--accent),inset 0 -3px 0 var(--accent)}
+#tt .now.pn{color:var(--accent);box-shadow:inset 3px 3px 0 var(--accent),inset 0 -3px 0 var(--accent)}
+#tt .now.last{box-shadow:inset -3px 3px 0 var(--accent),inset 0 -3px 0 var(--accent)}
+#tt .next{box-shadow:inset 0 -3px 0 var(--accent)}
+#tt .next.pn{color:var(--accent)}
+#tt .empty{grid-column:1/-1;height:200px;display:flex;align-items:center;justify-content:center;font-size:24px;color:var(--muted)}
+
+/* 반별 현황 */
+#roster{flex:none;display:flex;gap:14px}
+.grade{min-width:0;background:var(--panel);border-radius:8px;overflow:hidden;display:flex;flex-direction:column}
+.grade .gh{height:32px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;color:#141A20}
+.grade .gh b{font-size:19px;font-weight:900}
+.grade .gh span{font-size:15px;font-weight:700}
+.grade .row{height:30px;display:grid;border-bottom:1px solid var(--line);font-size:16px}
+.grade .row:last-child{border-bottom:0}
+.grade .row>div{display:flex;align-items:center;justify-content:center;border-left:1px solid var(--line);
+  white-space:nowrap;overflow:hidden;color:var(--sub)}
+.grade .row>div:first-child{border-left:0;font-size:14px;font-weight:700;color:var(--muted)}
+.grade .row.no>div{font-weight:900}
+.grade .row.t1>div:not(:first-child){color:var(--text)}
+.grade .row.t2>div:not(:first-child){color:var(--muted)}
+
+/* 하단 */
+.bottom{flex:1;min-height:0;display:flex;gap:14px}
+.card{background:var(--panel);border-radius:14px;padding:12px 20px;display:flex;flex-direction:column;gap:8px;min-width:0;min-height:0}
+#weekCard{width:800px;flex:none}
+#noticeCard{flex:1}
+#week{flex:1;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.day{background:var(--panel2);border-radius:10px;padding:8px 12px;display:flex;flex-direction:column;gap:4px;
+  border:2px solid transparent;overflow:hidden}
+.day .d{font-size:18px;font-weight:700;color:var(--sub);flex:none}
+.day .c{font-size:17px;line-height:1.35;color:var(--text);white-space:pre-line;word-break:keep-all;overflow-wrap:anywhere}
+.day.past{background:var(--panel3)}
+.day.past .d{color:var(--dim)} .day.past .c{color:var(--muted)}
+.day.today{border-color:var(--accent)}
+.day.today .d{color:var(--accent);font-weight:900}
+.day .c.none{color:var(--dim)}
+#notices{flex:1;min-height:0;overflow:hidden;display:grid;grid-template-columns:max-content minmax(0,1fr);
+  column-gap:18px;row-gap:5px;align-content:start;font-size:18px;line-height:1.35}
+#notices .n{font-weight:700;color:var(--sub);white-space:nowrap}
+#notices .v{white-space:pre-line;word-break:keep-all;overflow-wrap:anywhere}
+#notices .empty{grid-column:1/-1;color:var(--dim)}
+</style>
+</head>
+<body>
+<div id="stage">
+
+  <div class="head">
+    <h1>경일고 교무실 현황판</h1>
+    <div class="right">
+      <div id="chip" class="off"></div>
+      <div id="date"></div>
+      <div id="clock"></div>
+    </div>
+  </div>
+
+  <div class="tt">
+    <div class="bar">
+      <div class="t" id="ttTitle">오늘 시간표</div>
+      <div class="s" id="ttStatus"></div>
+    </div>
+    <div id="tt"><div class="empty">시간표를 불러오는 중입니다</div></div>
+  </div>
+
+  <div id="roster"></div>
+
+  <div class="bottom">
+    <div class="card" id="weekCard">
+      <div class="bar">
+        <div class="t">이번 주 일정 · 기획모임</div>
+        <div class="s" id="weekStamp"></div>
+      </div>
+      <div id="week"></div>
+    </div>
+    <div class="card" id="noticeCard">
+      <div class="bar">
+        <div class="t">부서 전달사항</div>
+        <div class="s" id="sheetStatus"></div>
+      </div>
+      <div id="notices"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* ===================== 설정 ===================== */
+var CONFIG = {
+  // 변동 시간표 중계 주소: relay.gs 를 웹 앱으로 배포한 뒤 받은 .../exec 주소
+  // 비워 두면 기본 시간표만 표시합니다.
+  RELAY_URL: '',
+
+  // 기획모임 구글 시트
+  SHEET_ID: '1_1qIJU3PaGTfulM6H468snY12HSLzTNEuD0v6CTyIlM',
+  SHEET_GID: '0',
+
+  // index.html 과 같은 폴더의 파일
+  TIMETABLE_URL: 'timetable.csv',   // 학기 기본 시간표
+  ROSTER_URL: 'roster.csv',         // 반별 인원·담임·부담임
+
+  // 교시별 시작·종료 시각 (학교 일과표에 맞게 수정)
+  BELLS: [
+    ['08:40', '09:30'],
+    ['09:40', '10:30'],
+    ['10:40', '11:30'],
+    ['11:40', '12:30'],
+    ['13:30', '14:20'],
+    ['14:30', '15:20'],
+    ['15:30', '16:20']
+  ],
+
+  // 시간표 열 구성: 학년별 반 수 (분반 포함)
+  CLASSES: { '1': 11, '2': 9, '3': 15 },
+  GRADE_COLORS: { '1': '#7FB2F0', '2': '#5FD3BF', '3': '#F0A58A' },
+
+  CHANGE_POLL_MIN: 1,   // 변동 시간표 확인 주기(분)
+  SHEET_POLL_MIN: 5     // 기획모임 시트 확인 주기(분)
+};
+
+/* ===================== 공통 ===================== */
+var $ = function (id) { return document.getElementById(id); };
+var DOW = ['일', '월', '화', '수', '목', '금', '토'];
+var qs = new URLSearchParams(location.search);
+// 시험용: 주소 뒤에 ?now=2026-11-23T10:05 를 붙이면 그 시각으로 표시합니다.
+var timeOffset = qs.get('now') ? (new Date(qs.get('now')).getTime() - Date.now()) : 0;
+function now() { return new Date(Date.now() + timeOffset); }
+function pad(n) { return (n < 10 ? '0' : '') + n; }
+function hm(d) { return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+function mins(s) { var p = s.split(':'); return (+p[0]) * 60 + (+p[1]); }
+function ymd(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+function dayStart(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+function sameDay(a, b) { return ymd(a) === ymd(b); }
+function el(tag, cls, text) {
+  var e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined && text !== null) e.textContent = text;   // 외부 내용은 항상 글자로만 넣습니다
+  return e;
+}
+function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+
+function fitStage() {
+  var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+  $('stage').style.transform = 'translate(' + ((window.innerWidth - 1920 * s) / 2) + 'px,' +
+    ((window.innerHeight - 1080 * s) / 2) + 'px) scale(' + s + ')';
+}
+window.addEventListener('resize', fitStage);
+fitStage();
+
+function parseCSV(text) {
+  text = text.replace(/^﻿/, '');
+  var rows = [], row = [], cur = '', q = false;
+  for (var i = 0; i < text.length; i++) {
+    var c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; }
+      else cur += c;
+    } else if (c === '"') q = true;
+    else if (c === ',') { row.push(cur); cur = ''; }
+    else if (c === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; }
+    else if (c !== '\r') cur += c;
+  }
+  if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+  return rows;
+}
+
+/* ===================== 상태 ===================== */
+var state = {
+  base: null,        // { '월': { '1-1-1': {s,t} ... } , ... }  키: 학년-반-교시
+  periodsOf: {},     // 요일별 교시 수
+  change: null,      // 중계에서 받은 오늘 변동 정보
+  changeErr: false,
+  showDate: null,    // 시간표를 보여 주는 날짜
+  periodKey: ''
+};
+
+/* ===================== 시계·교시 ===================== */
+function periodsFor(d) { return state.periodsOf[DOW[d.getDay()]] || CONFIG.BELLS.length; }
+
+function currentPeriod(d) {
+  var day = d.getDay();
+  if (day === 0 || day === 6) return { label: '주말', on: false };
+  var m = d.getHours() * 60 + d.getMinutes(), B = CONFIG.BELLS.slice(0, periodsFor(d));
+  for (var i = 0; i < B.length; i++) {
+    var s = mins(B[i][0]), e = mins(B[i][1]);
+    if (m < s) {
+      var head = i === 0 ? '일과 전' : (s - mins(B[i - 1][1]) >= 30 ? '점심시간' : '쉬는 시간');
+      return { label: head + ' · ' + (i + 1) + '교시 ' + B[i][0] + ' 시작', on: false, next: i + 1, done: i };
+    }
+    if (m < e) return { label: (i + 1) + '교시 진행 중 · ' + B[i][1] + ' 종료', on: true, cur: i + 1, done: i };
+  }
+  return { label: '일과 종료', on: false, done: B.length };
+}
+
+// 시간표를 보여 줄 날: 평일은 오늘, 주말은 다음 월요일
+function targetDate(d) {
+  var t = dayStart(d), w = t.getDay();
+  if (w === 6) t.setDate(t.getDate() + 2);
+  if (w === 0) t.setDate(t.getDate() + 1);
+  return t;
+}
+
+function tick() {
+  var d = now();
+  $('clock').textContent = hm(d);
+  $('date').textContent = (d.getMonth() + 1) + '월 ' + d.getDate() + '일 ' + DOW[d.getDay()] + '요일';
+  var p = currentPeriod(d);
+  $('chip').textContent = p.label;
+  $('chip').className = p.on ? '' : 'off';
+  var key = ymd(targetDate(d)) + '|' + (p.cur || 0) + '|' + (p.next || 0) + '|' + (p.done || 0);
+  if (key !== state.periodKey) {
+    var dayChanged = state.showDate && ymd(targetDate(d)) !== ymd(state.showDate);
+    state.periodKey = key;
+    if (dayChanged) { state.change = null; pollChange(); }
+    renderTimetable();
+  }
+  // 자정이 지나면 화면을 새로 읽어 수정된 코드와 명단을 반영합니다
+  if (state.day !== undefined && state.day !== d.getDate() && !timeOffset) location.reload();
+  state.day = d.getDate();
+}
+
+/* ===================== 기본 시간표 ===================== */
+function cellKey(g, c, p) { return g + '-' + c + '-' + p; }
+
+function splitCell(text) {
+  text = (text || '').trim();
+  if (!text) return { s: '', t: '' };
+  var lines = text.split(/\s*\n\s*/);
+  if (lines.length >= 2) return { s: lines[0], t: lines.slice(1).join(' ') };
+  var m = /^(.*\S)\s+([가-힣]{2,4})$/.exec(text);   // "수학 김철수" 처럼 한 줄로 쓴 경우
+  return m ? { s: m[1], t: m[2] } : { s: text, t: '' };
+}
+
+async function loadBase() {
+  var text = null;
+  try {
+    var res = await fetch(CONFIG.TIMETABLE_URL, { cache: 'no-store' });
+    if (!res.ok) throw new Error(res.status);
+    text = await res.text();
+    store('base', text);
+  } catch (e) { text = load('base'); }
+  if (!text) { $('tt').textContent = ''; $('tt').appendChild(el('div', 'empty', '기본 시간표(timetable.csv)를 불러오지 못했습니다')); return; }
+  var rows = parseCSV(text), base = {}, per = {};
+  rows.slice(1).forEach(function (r) {
+    var day = (r[0] || '').trim(), p = parseInt(r[1], 10), g = (r[2] || '').trim(), c = parseInt(r[3], 10);
+    if (!day || !p || !g || !c) return;
+    (base[day] = base[day] || {})[cellKey(g, c, p)] = { s: (r[4] || '').trim(), t: (r[5] || '').trim() };
+    per[day] = Math.max(per[day] || 0, p);
+  });
+  state.base = base;
+  state.periodsOf = per;
+  renderTimetable();
+}
+
+/* ===================== 시간표 그리기 ===================== */
+function shrinkToFit(cell) {
+  [['.sj', 15, 10], ['.te', 13, 10]].forEach(function (d) {
+    var e = cell.querySelector(d[0]); if (!e) return;
+    var size = d[1];
+    while (e.scrollWidth > cell.clientWidth - 2 && size > d[2]) { size -= 1; e.style.fontSize = size + 'px'; }
+  });
+}
+
+function renderTimetable() {
+  if (!state.base) return;
+  var d = now(), td = targetDate(d), dayName = DOW[td.getDay()], isToday = sameDay(td, d);
+  state.showDate = td;
+  var base = state.base[dayName] || {}, nP = state.periodsOf[dayName] || 0;
+  var ch = state.change && state.change.date === ymd(td) && state.change.cells ? state.change : null;
+  var over = {};
+  if (ch) ch.cells.forEach(function (x) { over[cellKey(x[0], x[1], x[2])] = { s: x[3] || '', t: x[4] || '' }; });
+  var p = currentPeriod(d);
+  var grades = Object.keys(CONFIG.CLASSES);
+  var tt = $('tt'), changed = 0;
+  tt.textContent = '';
+  if (!nP) { tt.appendChild(el('div', 'empty', dayName + '요일 시간표가 없습니다')); updateTtBar(td, isToday, ch, 0); return; }
+
+  // 머리줄: 학년, 반
+  tt.appendChild(el('div', 'corner', ''));
+  grades.forEach(function (g) {
+    var h = el('div', 'gh', g + '학년');
+    h.style.gridColumn = 'span ' + CONFIG.CLASSES[g];
+    h.style.background = CONFIG.GRADE_COLORS[g];
+    tt.appendChild(h);
+  });
+  var corner = el('div', 'ch', '교시'); corner.style.borderLeft = '0'; corner.style.fontSize = '13px'; corner.style.color = 'var(--muted)';
+  tt.appendChild(corner);
+  grades.forEach(function (g) {
+    for (var c = 1; c <= CONFIG.CLASSES[g]; c++) {
+      var h = el('div', 'ch' + (c === 1 ? ' gs' : ''), String(c));
+      h.style.color = CONFIG.GRADE_COLORS[g];
+      if (c === 1) h.style.borderLeft = '2px solid var(--line2)';
+      tt.appendChild(h);
+    }
+  });
+
+  var cells = [];
+  for (var per = 1; per <= nP; per++) {
+    var rowCls = '';
+    if (isToday && p.cur === per) rowCls = ' now';
+    else if (isToday && p.next === per) rowCls = ' next';
+    else if (isToday && p.done !== undefined && per <= p.done) rowCls = ' past';
+    var bell = CONFIG.BELLS[per - 1];
+    var pn = el('div', 'pn' + rowCls, String(per));
+    if (bell) pn.appendChild(el('small', '', bell[0]));
+    tt.appendChild(pn);
+    var lastCol = grades.length - 1;
+    grades.forEach(function (g, gi) {
+      for (var c = 1; c <= CONFIG.CLASSES[g]; c++) {
+        var k = cellKey(g, c, per), b = base[k] || { s: '', t: '' };
+        var v = ch ? (over[k] || { s: '', t: '' }) : b;
+        var isChg = ch && (v.s !== b.s || v.t !== b.t);
+        if (isChg) changed++;
+        var cell = el('div', 'c' + (c === 1 ? ' gs' : '') + rowCls + (gi === lastCol && c === CONFIG.CLASSES[g] ? ' last' : '') +
+          (isChg ? ' chg' : '') + (/^공강/.test(v.s) || !v.s ? ' free' : ''));
+        var sj = el('div', 'sj');
+        var m = /^([A-Z])_(.+)$/.exec(v.s);
+        if (m) { sj.appendChild(el('i', '', m[1])); sj.appendChild(document.createTextNode(m[2])); }
+        else sj.textContent = v.s;
+        cell.appendChild(sj);
+        if (v.t) cell.appendChild(el('div', 'te', v.t));
+        tt.appendChild(cell);
+        cells.push(cell);
+      }
+    });
+  }
+  cells.forEach(shrinkToFit);
+  updateTtBar(td, isToday, ch, changed);
+}
+
+function updateTtBar(td, isToday, ch, changed) {
+  var t = $('ttTitle'), st = $('ttStatus');
+  t.textContent = isToday ? '오늘 시간표' : (td.getMonth() + 1) + '/' + td.getDate() + '(' + DOW[td.getDay()] + ') 시간표';
+  var tag = el('small', ch ? 'chg' : '', ch ? '변동 시간표' : '기본 시간표');
+  t.appendChild(tag);
+  var msg = '', warn = false;
+  if (ch) {
+    var u = new Date(ch.updated);
+    msg = (sameDay(u, now()) ? '' : (u.getMonth() + 1) + '/' + u.getDate() + ' ') + hm(u) + ' 업로드 · 바뀐 칸 ' + changed + '개 (노란색)';
+  } else if (state.change && state.change.error) { msg = state.change.error + ' · 기본 시간표 표시 중'; warn = true; }
+  else if (!CONFIG.RELAY_URL) msg = '변동 시간표 연결 전 · 기본 시간표만 표시';
+  else msg = '오늘 올라온 변동 시간표 없음';
+  if (state.changeErr) { msg += ' · 변동 시간표 연결 확인 중'; warn = true; }
+  var up = state.change && state.change.upcoming || [];
+  var nextDay = up.filter(function (x) { return x > ymd(td); })[0];
+  if (nextDay) { var nd = new Date(nextDay + 'T00:00'); msg += ' · ' + (nd.getMonth() + 1) + '/' + nd.getDate() + '(' + DOW[nd.getDay()] + ') 변동 예정'; }
+  st.textContent = msg;
+  st.className = 's' + (warn ? ' warn' : '');
+}
+
+/* ===================== 변동 시간표 ===================== */
+async function pollChange() {
+  if (!CONFIG.RELAY_URL) { renderTimetable(); return; }
+  var td = ymd(targetDate(now()));
+  try {
+    var sep = CONFIG.RELAY_URL.indexOf('?') < 0 ? '?' : '&';
+    var res = await fetch(CONFIG.RELAY_URL + sep + 'date=' + td, { cache: 'no-store' });
+    var j = await res.json();
+    if (j.fatal) throw new Error(j.fatal);
+    j.date = td;
+    state.change = j;
+    state.changeErr = false;
+    store('change', JSON.stringify(j));
+  } catch (e) {
+    state.changeErr = true;
+    if (!state.change) {
+      try { var saved = JSON.parse(load('change') || 'null'); if (saved && saved.date === td) state.change = saved; } catch (e2) {}
+    }
+  }
+  renderTimetable();
+}
+
+/* ===================== 기획모임 시트 ===================== */
+var DATE_RE = /^\s*(\d{1,2})\s*\/\s*(\d{1,2})\s*$/;
+
+function parseSheet(rows) {
+  var blocks = [], stamp = '', notices = [], i, j;
+  for (i = 0; i < rows.length; i++)
+    for (j = 0; j < rows[i].length; j++) if (/현재\s*$/.test(rows[i][j])) stamp = rows[i][j].trim();
+  var end = rows.length;
+  for (i = 0; i < rows.length; i++) if ((rows[i][0] || '').trim() === '전달사항') { end = i; break; }
+  for (i = 0; i < end; i++) {
+    var hits = rows[i].filter(function (c) { return DATE_RE.test(c); }).length;
+    if (hits >= 3) blocks.push({ dates: rows[i].slice(), cells: rows[i].map(function () { return []; }) });
+    else if (blocks.length) {
+      var b = blocks[blocks.length - 1];
+      for (j = 0; j < b.dates.length; j++) {
+        var v = (rows[i][j] || '').trim();
+        if (v && !/현재\s*$/.test(v)) b.cells[j].push(v);
+      }
+    }
+  }
+  var start = -1;
+  for (i = end; i < rows.length; i++) if ((rows[i][0] || '').trim() === '부서명') { start = i + 1; break; }
+  if (start < 0) start = end + 1;
+  for (i = start; i < rows.length; i++) {
+    var name = (rows[i][0] || '').trim(), body = (rows[i][1] || '').trim();
+    if (name && body) notices.push({ name: name, body: body });
+  }
+  return { blocks: blocks, stamp: stamp, notices: notices };
+}
+
+function pickWeek(blocks, d) {
+  var y = d.getFullYear(), best = null, bestT = -Infinity, t0 = targetDate(d).getTime();
+  blocks.forEach(function (b) {
+    var days = [];
+    b.dates.forEach(function (c, j) {
+      var m = DATE_RE.exec(c);
+      if (!m) return;
+      var dt = new Date(y, +m[1] - 1, +m[2]);
+      if (dt.getTime() - t0 > 180 * 864e5) dt.setFullYear(y - 1);   // 연말·연초 보정
+      if (t0 - dt.getTime() > 180 * 864e5) dt.setFullYear(y + 1);
+      days.push({ date: dt, text: b.cells[j].join('\n').trim() });
+    });
+    if (!days.length) return;
+    var first = days[0].date.getTime();
+    if (first <= t0 && first > bestT) { bestT = first; best = days; }   // 오늘 이전에 시작한 가장 최근 주
+  });
+  return best;
+}
+
+function fitBox(box, inner, max, min) {
+  var size = max;
+  inner.forEach(function (e) { e.style.fontSize = size + 'px'; });
+  while (box.scrollHeight > box.clientHeight + 1 && size > min) { size -= 1; inner.forEach(function (e) { e.style.fontSize = size + 'px'; }); }
+}
+
+function renderSheet(data) {
+  var d = now(), week = pickWeek(data.blocks, d), wk = $('week'), nt = $('notices'), today = dayStart(d).getTime();
+  $('weekStamp').textContent = data.stamp;
+  wk.textContent = '';
+  if (!week) wk.appendChild(el('div', 'day', '이번 주 일정이 시트에 없습니다'));
+  else week.forEach(function (x) {
+    var isToday = sameDay(x.date, d), past = x.date.getTime() < today;
+    var box = el('div', 'day' + (isToday ? ' today' : past ? ' past' : ''));
+    box.appendChild(el('div', 'd', (x.date.getMonth() + 1) + '/' + x.date.getDate() + ' ' + DOW[x.date.getDay()] + (isToday ? ' · 오늘' : '')));
+    box.appendChild(el('div', 'c' + (x.text ? '' : ' none'), x.text || (isToday ? '등록된 일정 없음' : '–')));
+    wk.appendChild(box);
+    fitBox(box, [box.querySelector('.c')], 17, 12);
+  });
+  nt.textContent = '';
+  if (!data.notices.length) nt.appendChild(el('div', 'empty', '등록된 전달사항이 없습니다'));
+  data.notices.forEach(function (n) { nt.appendChild(el('div', 'n', n.name)); nt.appendChild(el('div', 'v', n.body)); });
+  fitBox(nt, [nt], 18, 12);
+}
+
+async function pollSheet() {
+  var url = 'https://docs.google.com/spreadsheets/d/' + CONFIG.SHEET_ID + '/export?format=csv&gid=' + CONFIG.SHEET_GID;
+  try {
+    var res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error(res.status);
+    var text = await res.text();
+    if (/^\s*<(!doctype|html)/i.test(text)) throw new Error('not csv');
+    state.sheet = parseSheet(parseCSV(text));
+    renderSheet(state.sheet);
+    $('sheetStatus').textContent = ''; $('sheetStatus').className = 's';
+    store('sheet', text);
+  } catch (e) {
+    if (!state.sheet) {
+      var saved = load('sheet');
+      if (saved) { state.sheet = parseSheet(parseCSV(saved)); renderSheet(state.sheet); }
+    }
+    $('sheetStatus').textContent = '시트 연결 확인 중';
+    $('sheetStatus').className = 's warn';
+    if (!state.sheet) { $('notices').textContent = ''; $('notices').appendChild(el('div', 'empty', '기획모임 시트를 불러오지 못했습니다')); }
+  }
+}
+
+/* ===================== 반별 현황 ===================== */
+function renderRoster(rows) {
+  var grades = {}, order = [];
+  rows.slice(1).forEach(function (r) {
+    var g = (r[0] || '').trim(), c = (r[1] || '').trim();
+    if (!g || !c) return;
+    if (!grades[g]) { grades[g] = []; order.push(g); }
+    grades[g].push({ no: c, cnt: (r[2] || '').trim(), t1: (r[3] || '').trim(), t2: (r[4] || '').trim() });
+  });
+  var root = $('roster');
+  root.textContent = '';
+  order.forEach(function (g) {
+    var list = grades[g], color = CONFIG.GRADE_COLORS[g] || '#C5CFD9', total = 0, known = true;
+    list.forEach(function (x) { var n = parseInt(x.cnt, 10); if (isNaN(n)) known = false; else total += n; });
+    var box = el('div', 'grade');
+    box.style.flex = list.length + ' 1 0px';
+    var gh = el('div', 'gh'); gh.style.background = color;
+    gh.appendChild(el('b', '', g + '학년'));
+    gh.appendChild(el('span', '', list.length + '학급' + (known ? ' · 재적 ' + total + '명' : '')));
+    box.appendChild(gh);
+    var tpl = '56px repeat(' + list.length + ', minmax(0, 1fr))';
+    [['반', 'no', 'no'], ['인원', 'cnt', ''], ['담임', 't1', 't1'], ['부담임', 't2', 't2']].forEach(function (def) {
+      var row = el('div', 'row ' + def[2]); row.style.gridTemplateColumns = tpl;
+      row.appendChild(el('div', '', def[0]));
+      list.forEach(function (x) {
+        var cell = el('div', '', x[def[1]] || '–');
+        if (def[1] === 'no') cell.style.color = color;
+        row.appendChild(cell);
+      });
+      box.appendChild(row);
+    });
+    root.appendChild(box);
+  });
+}
+
+async function loadRoster() {
+  var text = null;
+  try {
+    var res = await fetch(CONFIG.ROSTER_URL, { cache: 'no-store' });
+    if (!res.ok) throw new Error(res.status);
+    text = await res.text();
+    store('roster', text);
+  } catch (e) { text = load('roster'); }
+  if (text) { renderRoster(parseCSV(text)); return; }
+  $('roster').textContent = '';
+  var box = el('div', 'grade', '명단 파일(roster.csv)을 불러오지 못했습니다');
+  box.style.cssText = 'flex:1;padding:12px 16px;color:#9AA7B4;font-size:18px';
+  $('roster').appendChild(box);
+}
+
+/* ===================== 시작 ===================== */
+tick();
+setInterval(tick, 1000);
+loadBase().then(pollChange);
+setInterval(pollChange, CONFIG.CHANGE_POLL_MIN * 60 * 1000);
+setInterval(loadBase, 60 * 60 * 1000);
+loadRoster();
+setInterval(loadRoster, 60 * 60 * 1000);
+pollSheet();
+setInterval(pollSheet, CONFIG.SHEET_POLL_MIN * 60 * 1000);
+</script>
+</body>
+</html>
