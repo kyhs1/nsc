@@ -84,12 +84,21 @@ body{font-family:'Noto Sans KR','Malgun Gothic',system-ui,sans-serif;color:var(-
 /* 하단 */
 .bottom{flex:1;min-height:0;display:flex;gap:14px}
 .card{background:var(--panel);border-radius:14px;padding:12px 20px;display:flex;flex-direction:column;gap:8px;min-width:0;min-height:0}
-#weekCard{width:800px;flex:none}
+#weekCard{width:690px;flex:none}
 #noticeCard{flex:1}
+#dutyCol{width:276px;flex:none;display:flex;flex-direction:column;gap:10px;min-height:0}
+#dutyCol .card{padding:10px 16px;gap:4px}
+#lunchCard{flex:4 1 0;min-height:0}
+#dinnerCard{flex:2.6 1 0;min-height:0}
+.dl{flex:1;min-height:0;display:grid;grid-template-columns:max-content minmax(0,1fr);column-gap:12px;align-content:space-evenly;
+  font-size:19px;line-height:1.25}
+.dl .k{font-size:15px;font-weight:500;color:var(--muted);white-space:nowrap;align-self:center}
+.dl .v{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
+.dl .none{grid-column:1/-1;font-size:16px;color:var(--dim)}
 #week{flex:1;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
 .day{background:var(--panel2);border-radius:10px;padding:8px 12px;display:flex;flex-direction:column;gap:4px;
   border:2px solid transparent;overflow:hidden}
-.day .d{font-size:18px;font-weight:700;color:var(--sub);flex:none}
+.day .d{font-size:18px;font-weight:700;color:var(--sub);flex:none;white-space:nowrap;letter-spacing:-.5px}
 .day .c{font-size:17px;line-height:1.35;color:var(--text);white-space:pre-line;word-break:keep-all;overflow-wrap:anywhere}
 .day.past{background:var(--panel3)}
 .day.past .d{color:var(--dim)} .day.past .c{color:var(--muted)}
@@ -140,6 +149,20 @@ body{font-family:'Noto Sans KR','Malgun Gothic',system-ui,sans-serif;color:var(-
       </div>
       <div id="notices"></div>
     </div>
+    <div id="dutyCol">
+      <div class="card" id="lunchCard">
+        <div class="bar">
+          <div class="t">중식 지도<small id="lunchGroup"></small></div>
+        </div>
+        <div class="dl" id="lunch"></div>
+      </div>
+      <div class="card" id="dinnerCard">
+        <div class="bar">
+          <div class="t">석식 지도<small id="dinnerGroup"></small></div>
+        </div>
+        <div class="dl" id="dinner"></div>
+      </div>
+    </div>
   </div>
 
 </div>
@@ -173,6 +196,15 @@ var CONFIG = {
   // 시간표 열 구성: 학년별 반 수 (분반 포함)
   CLASSES: { '1': 11, '2': 9, '3': 15 },
   GRADE_COLORS: { '1': '#7FB2F0', '2': '#5FD3BF', '3': '#F0A58A' },
+
+  // 중식·석식 지도 (명단은 duty.csv)
+  // groups: 매주 돌아가는 조 순서, start: groups 첫 번째 조가 맡는 주의 월요일
+  // fixed: 매주 고정으로 들어가는 담당 (조 순번과 상관없음)
+  DUTY_URL: 'duty.csv',
+  DUTY: {
+    '중식': { groups: ['3조'], start: '2026-11-16', fixed: [] },
+    '석식': { groups: ['6조'], start: '2026-11-16', fixed: ['문화복지부'] }
+  },
 
   CHANGE_POLL_MIN: 1,   // 변동 시간표 확인 주기(분)
   SHEET_POLL_MIN: 5     // 기획모임 시트 확인 주기(분)
@@ -274,6 +306,7 @@ function tick() {
     state.periodKey = key;
     if (dayChanged) { state.change = null; pollChange(); }
     renderTimetable();
+    renderDuty();
   }
   // 자정이 지나면 화면을 새로 읽어 수정된 코드와 명단을 반영합니다
   if (state.day !== undefined && state.day !== d.getDate() && !timeOffset) location.reload();
@@ -494,7 +527,7 @@ function renderSheet(data) {
   else week.forEach(function (x) {
     var isToday = sameDay(x.date, d), past = x.date.getTime() < today;
     var box = el('div', 'day' + (isToday ? ' today' : past ? ' past' : ''));
-    box.appendChild(el('div', 'd', (x.date.getMonth() + 1) + '/' + x.date.getDate() + ' ' + DOW[x.date.getDay()] + (isToday ? ' · 오늘' : '')));
+    box.appendChild(el('div', 'd', (x.date.getMonth() + 1) + '/' + x.date.getDate() + ' ' + DOW[x.date.getDay()] + (isToday ? ' 오늘' : '')));
     box.appendChild(el('div', 'c' + (x.text ? '' : ' none'), x.text || (isToday ? '등록된 일정 없음' : '–')));
     wk.appendChild(box);
     fitBox(box, [box.querySelector('.c')], 17, 12);
@@ -577,6 +610,63 @@ async function loadRoster() {
   $('roster').appendChild(box);
 }
 
+/* ===================== 중식·석식 지도 ===================== */
+function mondayOf(d) { var t = dayStart(d); t.setDate(t.getDate() - ((t.getDay() + 6) % 7)); return t; }
+
+function dutyGroup(kind, d) {
+  var cfg = CONFIG.DUTY[kind];
+  if (!cfg || !cfg.groups.length) return null;
+  var weeks = Math.round((mondayOf(d) - mondayOf(new Date(cfg.start + 'T00:00'))) / (7 * 864e5));
+  var n = cfg.groups.length;
+  return cfg.groups[((weeks % n) + n) % n];
+}
+
+function renderDuty() {
+  if (!state.duty) return;
+  var td = targetDate(now()), day = DOW[td.getDay()];
+  [['중식', 'lunch', 'lunchGroup'], ['석식', 'dinner', 'dinnerGroup']].forEach(function (def) {
+    var kind = def[0], box = $(def[1]), cfg = CONFIG.DUTY[kind] || { fixed: [], groups: [] };
+    var g = dutyGroup(kind, td);
+    $(def[2]).textContent = g || '';
+    $(def[2]).style.display = g ? '' : 'none';
+    var owners = (cfg.fixed || []).concat(g ? [g] : []);
+    var rows = [];
+    owners.forEach(function (o) {
+      var list = state.duty.filter(function (r) { return r.kind === kind && r.owner === o && r.day === day; });
+      if (!list.length && o === g) rows.push({ k: o, v: '명단 없음' });
+      list.forEach(function (r) {
+        // 석식처럼 자리가 하나뿐이면 담당(부서·조) 이름을 앞에 씁니다
+        var spots = state.duty.filter(function (x) { return x.kind === kind && x.owner === o; })
+          .map(function (x) { return x.spot; }).filter(function (v, i, a) { return a.indexOf(v) === i; });
+        rows.push({ k: spots.length > 1 ? r.spot : o, v: r.name });
+      });
+    });
+    box.textContent = '';
+    if (!rows.length) { box.appendChild(el('div', 'none', '지도 명단이 없습니다')); return; }
+    rows.forEach(function (r) { box.appendChild(el('div', 'k', r.k)); box.appendChild(el('div', 'v', r.v)); });
+    // 이름이 길면 글자를 줄입니다
+    Array.prototype.forEach.call(box.querySelectorAll('.v'), function (v) {
+      var size = 19;
+      while (v.scrollWidth > v.clientWidth + 1 && size > 13) { size -= 1; v.style.fontSize = size + 'px'; }
+    });
+  });
+}
+
+async function loadDuty() {
+  var text = null;
+  try {
+    var res = await fetch(CONFIG.DUTY_URL, { cache: 'no-store' });
+    if (!res.ok) throw new Error(res.status);
+    text = await res.text();
+    store('duty', text);
+  } catch (e) { text = load('duty'); }
+  if (!text) { $('lunch').textContent = ''; $('lunch').appendChild(el('div', 'none', '명단 파일(duty.csv)을 불러오지 못했습니다')); return; }
+  state.duty = parseCSV(text).slice(1).map(function (r) {
+    return { kind: (r[0] || '').trim(), owner: (r[1] || '').trim(), day: (r[2] || '').trim().charAt(0), spot: (r[3] || '').trim(), name: (r[4] || '').trim() };
+  }).filter(function (r) { return r.kind && r.owner && r.day && r.name; });
+  renderDuty();
+}
+
 /* ===================== 시작 ===================== */
 tick();
 setInterval(tick, 1000);
@@ -585,6 +675,8 @@ setInterval(pollChange, CONFIG.CHANGE_POLL_MIN * 60 * 1000);
 setInterval(loadBase, 60 * 60 * 1000);
 loadRoster();
 setInterval(loadRoster, 60 * 60 * 1000);
+loadDuty();
+setInterval(loadDuty, 60 * 60 * 1000);
 pollSheet();
 setInterval(pollSheet, CONFIG.SHEET_POLL_MIN * 60 * 1000);
 </script>
